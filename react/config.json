@@ -1,0 +1,9 @@
+{
+  "routes": [
+    {
+      "path": "/",
+      "src": "src/pages/WeddingGenerator.tsx"
+    }
+  ],
+  "components": []
+}

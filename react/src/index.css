@@ -1,0 +1,202 @@
+@import url('https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,600;0,700;1,400;1,600&family=Dancing+Script:wght@400;600;700&family=Cormorant+Garamond:ital,wght@0,300;0,400;1,300;1,400&display=swap');
+@import "tailwindcss";
+@import "tw-animate-css";
+
+@custom-variant dark (&:is(.dark *));
+
+@font-face {
+  font-family: "Poppins-Regular_6";
+  src: url("/fonts/Poppins-Regular_6.ttf") format("truetype");
+  font-weight: normal;
+  font-style: normal;
+  font-display: swap;
+}
+
+@theme inline {
+  --font-sans: var(--fontSans);
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-chart-1: var(--chart-1);
+  --color-chart-2: var(--chart-2);
+  --color-chart-3: var(--chart-3);
+  --color-chart-4: var(--chart-4);
+  --color-chart-5: var(--chart-5);
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-ring: var(--sidebar-ring);
+  --shadow-x: var(--shadow-x);
+  --shadow-y: var(--shadow-y);
+  --shadow-blur: var(--shadow-blur);
+  --shadow-spread: var(--shadow-spread);
+  --shadow-color: var(--shadow-color);
+
+  /* Wedding theme colors */
+  --color-wedding-ivory: var(--wedding-ivory);
+  --color-wedding-rose: var(--wedding-rose);
+  --color-wedding-gold: var(--wedding-gold);
+  --color-wedding-wine: var(--wedding-wine);
+  --color-wedding-blush: var(--wedding-blush);
+  --color-wedding-sage: var(--wedding-sage);
+}
+
+:root {
+  --fontSans: "Poppins-Regular_6";
+  --radius: 0.5rem;
+  --background: #faf7f4;
+  --foreground: #2c1810;
+  --card: #fffdf9;
+  --card-foreground: #2c1810;
+  --popover: #fffdf9;
+  --popover-foreground: #2c1810;
+  --primary: #b8860b;
+  --primary-foreground: #fffdf9;
+  --secondary: #f5ede4;
+  --secondary-foreground: #2c1810;
+  --muted: #f9f4ef;
+  --muted-foreground: #8b7355;
+  --accent: #fdf0e8;
+  --accent-foreground: #8b3a3a;
+  --destructive: #c0392b;
+  --destructive-foreground: #fffdf9;
+  --border: #e8d5c4;
+  --input: #ede0d4;
+  --ring: #d4a96a;
+
+  --chart-1: #d4a96a;
+  --chart-2: #8b3a3a;
+  --chart-3: #6b8e6b;
+  --chart-4: #7a5c8a;
+  --chart-5: #c4956a;
+
+  --sidebar: #f7f0e9;
+  --sidebar-foreground: #2c1810;
+  --sidebar-primary: #8b3a3a;
+  --sidebar-primary-foreground: #fffdf9;
+  --sidebar-accent: #efe4d9;
+  --sidebar-accent-foreground: #2c1810;
+  --sidebar-border: #e0ccbb;
+  --sidebar-ring: #d4a96a;
+
+  --shadow-spread: 0px;
+  --shadow-blur: 20px;
+  --shadow-x: 0px;
+  --shadow-color: rgba(139, 58, 58, 0.12);
+  --shadow-y: 4px;
+
+  /* Wedding colors */
+  --wedding-ivory: #fdf6e3;
+  --wedding-rose: #c4788a;
+  --wedding-gold: #c9a84c;
+  --wedding-wine: #7d2e45;
+  --wedding-blush: #f7d6d6;
+  --wedding-sage: #8aab8a;
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  body {
+    @apply bg-background text-foreground font-sans;
+  }
+}
+
+@layer utilities {
+  .shadow-custom {
+    box-shadow: var(--shadow-x) var(--shadow-y) var(--shadow-blur) var(--shadow-spread) var(--shadow-color);
+  }
+
+  .font-playfair {
+    font-family: 'Playfair Display', serif;
+  }
+
+  .font-dancing {
+    font-family: 'Dancing Script', cursive;
+  }
+
+  .font-cormorant {
+    font-family: 'Cormorant Garamond', serif;
+  }
+}
+
+/* Wedding card animations */
+@keyframes fadeInUp {
+  from { opacity: 0; transform: translateY(20px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes shimmer {
+  0% { background-position: -200% center; }
+  100% { background-position: 200% center; }
+}
+
+.animate-fade-in-up {
+  animation: fadeInUp 0.6s ease-out forwards;
+}
+
+.gold-shimmer {
+  background: linear-gradient(90deg, #c9a84c, #f0d080, #c9a84c, #a87832);
+  background-size: 200% auto;
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  animation: shimmer 3s linear infinite;
+}
+
+/* Template preview border */
+.template-preview-border {
+  border: 2px solid transparent;
+  transition: all 0.3s ease;
+}
+
+.template-preview-border.active {
+  border-color: #c9a84c;
+  box-shadow: 0 0 0 3px rgba(201, 168, 76, 0.2);
+}
+
+/* Input style */
+.wedding-input {
+  background: #fffdf9;
+  border: 1px solid #e8d5c4;
+  border-radius: 8px;
+  padding: 10px 14px;
+  width: 100%;
+  font-size: 14px;
+  color: #2c1810;
+  transition: all 0.2s ease;
+  outline: none;
+}
+
+.wedding-input:focus {
+  border-color: #c9a84c;
+  box-shadow: 0 0 0 3px rgba(201, 168, 76, 0.15);
+}
+
+.wedding-input::placeholder {
+  color: #b8a898;
+}
