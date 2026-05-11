@@ -21,7 +21,7 @@ class ErrorBoundary extends React.Component<
 }
 
 const App = () => (
-  <BrowserRouter>
+  <BrowserRouter basename="/wedding-invitation">
     <ErrorBoundary>
       <Routes>
         <Route path="/" element={<WeddingGenerator />} />
