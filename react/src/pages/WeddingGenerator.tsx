@@ -478,7 +478,7 @@ const TemplateRomantic = ({ info }) => {
           </div>
         </div>
 
-        {info.galleryImages.length > 0 && (
+        {info.galleryImages?.length > 0 && (
           <div className="w-full max-w-sm mt-4">
             <p className="text-xs tracking-widest uppercase mb-2" style={{ color: '#c4788a' }}>甜蜜瞬间</p>
             <div className="grid grid-cols-3 gap-2">
@@ -489,7 +489,7 @@ const TemplateRomantic = ({ info }) => {
           </div>
         )}
 
-        {info.pages.map(page => (
+        {info.pages?.map(page => (
           <PageModuleRenderer key={page.id} page={page} defaultFont={info.defaultFont} themeColor={themeColor} />
         ))}
 
@@ -548,7 +548,7 @@ const TemplateClassic = ({ info }) => {
           ))}
         </div>
 
-        {info.galleryImages.length > 0 && (
+        {info.galleryImages?.length > 0 && (
           <div className="w-full max-w-xs mt-4 grid grid-cols-3 gap-2">
             {info.galleryImages.slice(0, 3).map((img, i) => (
               <div key={i} className="aspect-square rounded-lg overflow-hidden"><img src={img} alt={`相册 ${i + 1}`} className="w-full h-full object-cover" /></div>
@@ -556,7 +556,7 @@ const TemplateClassic = ({ info }) => {
           </div>
         )}
 
-        {info.pages.map(page => (
+        {info.pages?.map(page => (
           <PageModuleRenderer key={page.id} page={page} defaultFont={info.defaultFont} themeColor={themeColor} />
         ))}
 
@@ -612,7 +612,7 @@ const TemplateModern = ({ info }) => {
           ))}
         </div>
 
-        {info.galleryImages.length > 0 && (
+        {info.galleryImages?.length > 0 && (
           <div className="flex gap-2 mt-4">
             {info.galleryImages.slice(0, 3).map((img, i) => (
               <div key={i} className="w-16 h-16 rounded-lg overflow-hidden"><img src={img} alt={`相册 ${i + 1}`} className="w-full h-full object-cover" /></div>
@@ -620,7 +620,7 @@ const TemplateModern = ({ info }) => {
           </div>
         )}
 
-        {info.pages.map(page => (
+        {info.pages?.map(page => (
           <PageModuleRenderer key={page.id} page={page} defaultFont={info.defaultFont} themeColor={themeColor} />
         ))}
 
@@ -693,7 +693,7 @@ const TemplateChinese = ({ info }) => {
           ))}
         </div>
 
-        {info.galleryImages.length > 0 && (
+        {info.galleryImages?.length > 0 && (
           <div className="flex gap-2 mt-4 justify-center">
             {info.galleryImages.slice(0, 3).map((img, i) => (
               <div key={i} className="w-16 h-16 rounded-lg overflow-hidden border border-gold-400"><img src={img} alt={`相册 ${i + 1}`} className="w-full h-full object-cover" /></div>
@@ -701,7 +701,7 @@ const TemplateChinese = ({ info }) => {
           </div>
         )}
 
-        {info.pages.map(page => (
+        {info.pages?.map(page => (
           <PageModuleRenderer key={page.id} page={page} defaultFont={info.defaultFont} themeColor={themeColor} />
         ))}
 
