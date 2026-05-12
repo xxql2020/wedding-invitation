@@ -54,7 +54,7 @@ const usedLucideIcons = getUsedLucideIcons();
 
 // https://vite.dev/config/
 export default defineConfig({
-  base: '/wedding-invitation/',
+  base: '/',
   plugins: [
     react(),
     tailwindcss(),
