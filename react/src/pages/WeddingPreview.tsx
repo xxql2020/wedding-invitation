@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useRef } from 'react';
-import { Heart } from 'lucide-react';
+import { Heart, Play, Pause } from 'lucide-react';
 import html2canvas from 'html2canvas';
 import { toast } from 'sonner';
 import { QRCodeCanvas } from 'qrcode.react';
@@ -22,12 +22,18 @@ export interface WeddingInfo {
   weddingTime: string;
   ceremonyVenue: string;
   banquetVenue: string;
+  ceremonyLat: number;
+  ceremonyLng: number;
+  banquetLat: number;
+  banquetLng: number;
   message: string;
   coverImage: string;
   galleryImages: string[];
   pages: PageModule[];
   defaultFont: string;
   template: string;
+  bgMusic: string;
+  bgMusicName: string;
 }
 
 const fonts = [
@@ -38,14 +44,20 @@ const fonts = [
   { id: 'sans', name: '现代无衬线', family: "'Noto Sans SC', sans-serif" },
 ];
 
-const generateMapLink = (address: string): string => {
+const generateMapLink = (address: string, lat: number = 0, lng: number = 0): string => {
   const encodedAddress = encodeURIComponent(address);
-  const gaodeLink = `amapuri://route?sourceApplication=婚礼请帖&daddr=${encodedAddress}&dev=0`;
-  const baiduLink = `baidumap://map/geocoder?src=婚礼请帖&address=${encodedAddress}`;
-  const iosLink = `maps://maps.apple.com/?q=${encodedAddress}`;
-  const androidLink = `geo:0,0?q=${encodedAddress}`;
-  const gaodeWebLink = `https://uri.amap.com/marker?position=&name=${encodedAddress}&callnative=0`;
-  const baiduWebLink = `https://map.baidu.com/search/${encodedAddress}`;
+  const locationParam = lat && lng ? `&location=${lat},${lng}` : '';
+  
+  const baiduAppLink = lat && lng 
+    ? `baidumap://map/direction?destination=name:${encodedAddress}|latlng:${lat},${lng}&mode=driving&src=婚礼请帖`
+    : `baidumap://map/geocoder?src=婚礼请帖&address=${encodedAddress}`;
+  
+  const baiduWebLink = lat && lng 
+    ? `https://map.baidu.com/search/${encodedAddress}/@${lng},${lat},18z`
+    : `https://map.baidu.com/search/${encodedAddress}`;
+  
+  const iosLink = `maps://maps.apple.com/?q=${encodedAddress}${lat && lng ? `&ll=${lat},${lng}` : ''}`;
+  const androidLink = `geo:${lat || 0},${lng || 0}?q=${encodedAddress}`;
   
   return `javascript:(function(){
     var addr = '${encodedAddress}';
@@ -53,23 +65,165 @@ const generateMapLink = (address: string): string => {
     if(ua.match(/MicroMessenger/i)){
       window.location.href = '${baiduWebLink}';
     } else if(ua.match(/(iPad|iPhone|iPod)/)){
-      window.location.href = '${gaodeLink}';
+      window.location.href = '${baiduAppLink}';
       setTimeout(function(){
         if(document.readyState === 'complete'){
           window.location.href = '${iosLink}';
         }
       }, 500);
     } else if(ua.match(/Android/)){
-      window.location.href = '${gaodeLink}';
+      window.location.href = '${baiduAppLink}';
       setTimeout(function(){
         if(document.readyState === 'complete'){
           window.location.href = '${androidLink}';
         }
       }, 500);
     } else {
-      window.location.href = '${gaodeWebLink}';
+      window.location.href = '${baiduWebLink}';
     }
   })()`;
+};
+
+const handleMapClick = (address: string, lat: number = 0, lng: number = 0) => {
+  const encodedAddress = encodeURIComponent(address);
+  
+  const gaodeAppLink = lat && lng
+    ? `androidamap://navi?sourceApplication=婚礼请帖&lat=${lat}&lon=${lng}&dname=${encodedAddress}&dev=0&m=0`
+    : `androidamap://search?keywords=${encodedAddress}&dev=0`;
+  
+  const gaodeIosLink = lat && lng
+    ? `iosamap://navi?sourceApplication=婚礼请帖&lat=${lat}&lon=${lng}&dname=${encodedAddress}&dev=0&m=0`
+    : `iosamap://search?keywords=${encodedAddress}`;
+  
+  const gaodeWebLink = lat && lng
+    ? `https://uri.amap.com/navigation?to=${lng},${lat},${encodedAddress}&mode=car&callnative=0`
+    : `https://surl.amap.com/search?query=${encodedAddress}`;
+  
+  const baiduAppLink = lat && lng
+    ? `baidumap://map/direction?destination=name:${encodedAddress}|latlng:${lat},${lng}&mode=driving&src=婚礼请帖`
+    : `baidumap://map/geocoder?src=婚礼请帖&address=${encodedAddress}`;
+  
+  const baiduWebLink = lat && lng
+    ? `https://map.baidu.com/search/${encodedAddress}/@${lng},${lat},18z`
+    : `https://map.baidu.com/search/${encodedAddress}`;
+  
+  const iosLink = `maps://maps.apple.com/?q=${encodedAddress}${lat && lng ? `&ll=${lat},${lng}` : ''}`;
+  const androidLink = `geo:${lat || 0},${lng || 0}?q=${encodedAddress}`;
+  
+  const ua = navigator.userAgent;
+  
+  const isWechat = ua.match(/MicroMessenger/i);
+  const isIOS = ua.match(/(iPad|iPhone|iPod)/);
+  const isAndroid = ua.match(/Android/);
+  
+  if (isWechat) {
+    window.location.href = gaodeWebLink;
+    return;
+  }
+  
+  if (isIOS) {
+    window.location.href = gaodeIosLink;
+    setTimeout(() => {
+      window.location.href = baiduAppLink;
+    }, 500);
+    setTimeout(() => {
+      window.location.href = iosLink;
+    }, 1000);
+    return;
+  }
+  
+  if (isAndroid) {
+    window.location.href = gaodeAppLink;
+    setTimeout(() => {
+      window.location.href = baiduAppLink;
+    }, 500);
+    setTimeout(() => {
+      window.location.href = androidLink;
+    }, 1000);
+    return;
+  }
+  
+  window.location.href = gaodeWebLink;
+};
+
+const openMapChooser = (address: string, lat: number = 0, lng: number = 0) => {
+  const encodedAddress = encodeURIComponent(address);
+  
+  const gaodeAppLink = lat && lng
+    ? `androidamap://navi?sourceApplication=婚礼请帖&lat=${lat}&lon=${lng}&dname=${encodedAddress}&dev=0&m=0`
+    : `androidamap://search?keywords=${encodedAddress}&dev=0`;
+  
+  const gaodeIosLink = lat && lng
+    ? `iosamap://navi?sourceApplication=婚礼请帖&lat=${lat}&lon=${lng}&dname=${encodedAddress}&dev=0&m=0`
+    : `iosamap://search?keywords=${encodedAddress}`;
+  
+  const gaodeWebLink = lat && lng
+    ? `https://uri.amap.com/navigation?to=${lng},${lat},${encodedAddress}&mode=car&callnative=0`
+    : `https://surl.amap.com/search?query=${encodedAddress}`;
+  
+  const baiduAppLink = lat && lng
+    ? `baidumap://map/direction?destination=name:${encodedAddress}|latlng:${lat},${lng}&mode=driving&src=婚礼请帖`
+    : `baidumap://map/geocoder?src=婚礼请帖&address=${encodedAddress}`;
+  
+  const baiduWebLink = lat && lng
+    ? `https://map.baidu.com/search/${encodedAddress}/@${lng},${lat},18z`
+    : `https://map.baidu.com/search/${encodedAddress}`;
+  
+  const iosLink = `maps://maps.apple.com/?q=${encodedAddress}${lat && lng ? `&ll=${lat},${lng}` : ''}`;
+  
+  const ua = navigator.userAgent;
+  const isIOS = ua.match(/(iPad|iPhone|iPod)/);
+  
+  const modal = document.createElement('div');
+  modal.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.5);z-index:99999;display:flex;align-items:center;justify-content:center;';
+  modal.onclick = () => modal.remove();
+  
+  const content = document.createElement('div');
+  content.style.cssText = 'background:white;border-radius:16px;padding:24px;width:280px;text-align:center;';
+  content.onclick = (e) => e.stopPropagation();
+  
+  content.innerHTML = `
+    <p style="font-size:16px;font-weight:bold;color:#2c1810;margin-bottom:16px;">选择地图导航</p>
+    <p style="font-size:14px;color:#8b7355;margin-bottom:16px;word-break:break-all;">${address}</p>
+    <div style="display:flex;flex-direction:column;gap:10px;">
+      <button id="mapGaode" style="padding:12px;border:none;border-radius:10px;background:#1aad19;color:white;font-size:14px;cursor:pointer;">高德地图</button>
+      <button id="mapBaidu" style="padding:12px;border:none;border-radius:10px;background:#306dec;color:white;font-size:14px;cursor:pointer;">百度地图</button>
+      <button id="mapApple" style="padding:12px;border:none;border-radius:10px;background:#333;color:white;font-size:14px;cursor:pointer;">苹果地图</button>
+    </div>
+    <button id="mapCancel" style="margin-top:12px;padding:8px;border:none;background:transparent;color:#8b7355;font-size:12px;cursor:pointer;">取消</button>
+  `;
+  
+  modal.appendChild(content);
+  document.body.appendChild(modal);
+  
+  document.getElementById('mapGaode').onclick = () => {
+    modal.remove();
+    if (isIOS) {
+      window.location.href = gaodeIosLink;
+    } else {
+      window.location.href = gaodeAppLink;
+    }
+    setTimeout(() => {
+      window.location.href = gaodeWebLink;
+    }, 500);
+  };
+  
+  document.getElementById('mapBaidu').onclick = () => {
+    modal.remove();
+    window.location.href = baiduAppLink;
+    setTimeout(() => {
+      window.location.href = baiduWebLink;
+    }, 500);
+  };
+  
+  document.getElementById('mapApple').onclick = () => {
+    modal.remove();
+    window.location.href = iosLink;
+  };
+  
+  document.getElementById('mapCancel').onclick = () => {
+    modal.remove();
+  };
 };
 
 const PageModuleRenderer = ({ page, defaultFont, themeColor }) => {
@@ -182,11 +336,11 @@ const TemplateRomantic = ({ info }) => {
           </div>
           <div className="rounded-lg p-3" style={{ background: 'rgba(201, 168, 76, 0.07)', border: '1px solid rgba(201, 168, 76, 0.2)' }}>
             <p className="text-xs tracking-widest uppercase mb-1" style={{ color: '#c9a84c' }}>婚礼仪式</p>
-            <a href={generateMapLink(displayCeremony)} className="text-sm underline underline-offset-2 hover:opacity-80 transition-opacity" style={{ color: '#c4788a' }}>{displayCeremony}</a>
+            <button onClick={() => openMapChooser(displayCeremony, info.ceremonyLat, info.ceremonyLng)} className="text-sm underline underline-offset-2 hover:opacity-80 transition-opacity w-full text-left" style={{ color: '#c4788a', background: 'transparent', border: 'none', padding: 0 }}>{displayCeremony}</button>
           </div>
           <div className="rounded-lg p-3" style={{ background: 'rgba(201, 168, 76, 0.07)', border: '1px solid rgba(201, 168, 76, 0.2)' }}>
             <p className="text-xs tracking-widest uppercase mb-1" style={{ color: '#c9a84c' }}>喜宴地点</p>
-            <a href={generateMapLink(displayBanquet)} className="text-sm underline underline-offset-2 hover:opacity-80 transition-opacity" style={{ color: '#c4788a' }}>{displayBanquet}</a>
+            <button onClick={() => openMapChooser(displayBanquet, info.banquetLat, info.banquetLng)} className="text-sm underline underline-offset-2 hover:opacity-80 transition-opacity w-full text-left" style={{ color: '#c4788a', background: 'transparent', border: 'none', padding: 0 }}>{displayBanquet}</button>
           </div>
         </div>
 
@@ -252,12 +406,14 @@ const TemplateClassic = ({ info }) => {
         <p className="text-sm leading-relaxed my-3 max-w-xs italic" style={{ color: '#c4a882' }}>"{displayMsg}"</p>
 
         <div className="w-full max-w-xs space-y-2 mt-2">
-          {[{ label: '仪式地点', value: displayCeremony, isAddress: true }, { label: '喜宴地点', value: displayBanquet, isAddress: true }].map((item, i) => (
-            <div key={i} className="flex items-start gap-3 text-left py-2" style={{ borderBottom: '1px solid rgba(201,168,76,0.15)' }}>
-              <p className="text-xs tracking-wider whitespace-nowrap mt-0.5" style={{ color: '#c9a84c', minWidth: '56px' }}>{item.label}</p>
-              <a href={generateMapLink(item.value)} className="text-xs leading-relaxed underline underline-offset-2 hover:opacity-80 transition-opacity" style={{ color: '#f0d080' }}>{item.value}</a>
-            </div>
-          ))}
+          <div className="flex items-start gap-3 text-left py-2" style={{ borderBottom: '1px solid rgba(201,168,76,0.15)' }}>
+            <p className="text-xs tracking-wider whitespace-nowrap mt-0.5" style={{ color: '#c9a84c', minWidth: '56px' }}>仪式地点</p>
+            <button onClick={() => openMapChooser(displayCeremony, info.ceremonyLat, info.ceremonyLng)} className="text-xs leading-relaxed underline underline-offset-2 hover:opacity-80 transition-opacity w-full text-left" style={{ color: '#f0d080', background: 'transparent', border: 'none', padding: 0 }}>{displayCeremony}</button>
+          </div>
+          <div className="flex items-start gap-3 text-left py-2" style={{ borderBottom: '1px solid rgba(201,168,76,0.15)' }}>
+            <p className="text-xs tracking-wider whitespace-nowrap mt-0.5" style={{ color: '#c9a84c', minWidth: '56px' }}>喜宴地点</p>
+            <button onClick={() => openMapChooser(displayBanquet, info.banquetLat, info.banquetLng)} className="text-xs leading-relaxed underline underline-offset-2 hover:opacity-80 transition-opacity w-full text-left" style={{ color: '#f0d080', background: 'transparent', border: 'none', padding: 0 }}>{displayBanquet}</button>
+          </div>
         </div>
 
         {info.galleryImages && info.galleryImages.length > 0 && (
@@ -309,19 +465,27 @@ const TemplateModern = ({ info }) => {
         <p className="text-sm leading-relaxed italic mb-5" style={{ color: '#6b4c3b', maxWidth: '280px' }}>"{displayMsg}"</p>
 
         <div className="space-y-3">
-          {[{ icon: '📅', label: '日期与时间', value: `${displayDate} ${displayTime}`, isAddress: false }, { icon: '💒', label: '婚礼仪式', value: displayCeremony, isAddress: true }, { icon: '🍽', label: '喜宴地点', value: displayBanquet, isAddress: true }].map((item, i) => (
-            <div key={i} className="flex gap-3 items-start">
-              <div className="w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 text-sm" style={{ background: 'rgba(196, 120, 138, 0.1)' }}>{item.icon}</div>
-              <div>
-                <p className="text-xs tracking-wider uppercase" style={{ color: '#c4788a', marginBottom: '1px' }}>{item.label}</p>
-                {item.isAddress ? (
-                  <a href={generateMapLink(item.value)} className="text-xs underline underline-offset-2 hover:opacity-80 transition-opacity" style={{ color: '#c4788a', lineHeight: 1.5 }}>{item.value}</a>
-                ) : (
-                  <p className="text-xs" style={{ color: '#2c1810', lineHeight: 1.5 }}>{item.value}</p>
-                )}
-              </div>
+          <div className="flex gap-3 items-start">
+            <div className="w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 text-sm" style={{ background: 'rgba(196, 120, 138, 0.1)' }}>📅</div>
+            <div>
+              <p className="text-xs tracking-wider uppercase" style={{ color: '#c4788a', marginBottom: '1px' }}>日期与时间</p>
+              <p className="text-xs" style={{ color: '#2c1810', lineHeight: 1.5 }}>{displayDate} {displayTime}</p>
             </div>
-          ))}
+          </div>
+          <div className="flex gap-3 items-start">
+            <div className="w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 text-sm" style={{ background: 'rgba(196, 120, 138, 0.1)' }}>💒</div>
+            <div>
+              <p className="text-xs tracking-wider uppercase" style={{ color: '#c4788a', marginBottom: '1px' }}>婚礼仪式</p>
+              <button onClick={() => openMapChooser(displayCeremony, info.ceremonyLat, info.ceremonyLng)} className="text-xs underline underline-offset-2 hover:opacity-80 transition-opacity" style={{ color: '#c4788a', lineHeight: 1.5, background: 'transparent', border: 'none', padding: 0 }}>{displayCeremony}</button>
+            </div>
+          </div>
+          <div className="flex gap-3 items-start">
+            <div className="w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 text-sm" style={{ background: 'rgba(196, 120, 138, 0.1)' }}>🍽</div>
+            <div>
+              <p className="text-xs tracking-wider uppercase" style={{ color: '#c4788a', marginBottom: '1px' }}>喜宴地点</p>
+              <button onClick={() => openMapChooser(displayBanquet, info.banquetLat, info.banquetLng)} className="text-xs underline underline-offset-2 hover:opacity-80 transition-opacity" style={{ color: '#c4788a', lineHeight: 1.5, background: 'transparent', border: 'none', padding: 0 }}>{displayBanquet}</button>
+            </div>
+          </div>
         </div>
 
         {info.galleryImages && info.galleryImages.length > 0 && (
@@ -393,16 +557,18 @@ const TemplateChinese = ({ info }) => {
         <p className="text-2xl my-2 tracking-widest opacity-60" style={{ color: '#ffd700' }}>✿ ✿ ✿</p>
 
         <div className="w-full max-w-xs mt-2 space-y-2">
-          {[{ label: '吉日', value: `${displayDate}  ${displayTime}`, isAddress: false }, { label: '仪式', value: displayCeremony, isAddress: true }, { label: '喜宴', value: displayBanquet, isAddress: true }].map((item, i) => (
-            <div key={i} className="flex items-center gap-2" style={{ borderBottom: '1px solid rgba(255,215,0,0.15)', paddingBottom: '6px' }}>
-              <span className="text-sm font-bold tracking-widest" style={{ color: '#ffd700', minWidth: '28px' }}>{item.label}</span>
-              {item.isAddress ? (
-                <a href={generateMapLink(item.value)} className="text-sm underline underline-offset-2 hover:opacity-80 transition-opacity" style={{ color: '#ffd700', lineHeight: 1.6 }}>{item.value}</a>
-              ) : (
-                <span className="text-sm" style={{ color: 'rgba(255,215,0,0.8)', lineHeight: 1.6 }}>{item.value}</span>
-              )}
-            </div>
-          ))}
+          <div className="flex items-center gap-2" style={{ borderBottom: '1px solid rgba(255,215,0,0.15)', paddingBottom: '6px' }}>
+            <span className="text-sm font-bold tracking-widest" style={{ color: '#ffd700', minWidth: '28px' }}>吉日</span>
+            <span className="text-sm" style={{ color: 'rgba(255,215,0,0.8)', lineHeight: 1.6 }}>{displayDate}  {displayTime}</span>
+          </div>
+          <div className="flex items-center gap-2" style={{ borderBottom: '1px solid rgba(255,215,0,0.15)', paddingBottom: '6px' }}>
+            <span className="text-sm font-bold tracking-widest" style={{ color: '#ffd700', minWidth: '28px' }}>仪式</span>
+            <button onClick={() => openMapChooser(displayCeremony, info.ceremonyLat, info.ceremonyLng)} className="text-sm underline underline-offset-2 hover:opacity-80 transition-opacity" style={{ color: '#ffd700', lineHeight: 1.6, background: 'transparent', border: 'none', padding: 0 }}>{displayCeremony}</button>
+          </div>
+          <div className="flex items-center gap-2" style={{ borderBottom: '1px solid rgba(255,215,0,0.15)', paddingBottom: '6px' }}>
+            <span className="text-sm font-bold tracking-widest" style={{ color: '#ffd700', minWidth: '28px' }}>喜宴</span>
+            <button onClick={() => openMapChooser(displayBanquet, info.banquetLat, info.banquetLng)} className="text-sm underline underline-offset-2 hover:opacity-80 transition-opacity" style={{ color: '#ffd700', lineHeight: 1.6, background: 'transparent', border: 'none', padding: 0 }}>{displayBanquet}</button>
+          </div>
         </div>
 
         {info.galleryImages && info.galleryImages.length > 0 && (
@@ -425,14 +591,30 @@ const TemplateChinese = ({ info }) => {
 
 const WeddingPreview = () => {
   const [info, setInfo] = useState<WeddingInfo | null>(null);
+  const [template, setTemplate] = useState<string>('romantic');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [showQR, setShowQR] = useState(false);
+  const [isMobile, setIsMobile] = useState(false);
+  const [isMusicPlaying, setIsMusicPlaying] = useState(false);
   const previewRef = useRef(null);
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+
+  useEffect(() => {
+    const checkMobile = () => {
+      setIsMobile(window.innerWidth < 768);
+    };
+    checkMobile();
+    window.addEventListener('resize', checkMobile);
+    return () => window.removeEventListener('resize', checkMobile);
+  }, []);
 
   useEffect(() => {
     const loadData = () => {
-      const params = new URLSearchParams(window.location.search);
+      // 从 hash 中提取参数，因为使用的是 HashRouter
+      const hashParams = window.location.hash.slice(1).split('?');
+      const params = new URLSearchParams(hashParams[1] || '');
+      
       const shortCode = params.get('short');
       const configParam = params.get('config');
 
@@ -441,7 +623,15 @@ const WeddingPreview = () => {
         if (stored) {
           try {
             const parsed = JSON.parse(stored);
-            setInfo(parsed.info || parsed);
+            // 正确处理存储的数据结构 { info, template, createdAt }
+            if (parsed.info) {
+              setInfo(parsed.info);
+              if (parsed.template) {
+                setTemplate(parsed.template);
+              }
+            } else {
+              setInfo(parsed);
+            }
           } catch (e) {
             setError('无法加载请帖数据');
           }
@@ -451,7 +641,14 @@ const WeddingPreview = () => {
       } else if (configParam) {
         try {
           const decoded = JSON.parse(decodeURIComponent(atob(configParam)));
-          setInfo(decoded);
+          // 完整链接格式：{ ...info, template }
+          if (decoded.template) {
+            setTemplate(decoded.template);
+            const { template: _, ...infoData } = decoded;
+            setInfo(infoData as WeddingInfo);
+          } else {
+            setInfo(decoded);
+          }
         } catch (e) {
           setError('无法解析请帖链接');
         }
@@ -463,6 +660,32 @@ const WeddingPreview = () => {
 
     loadData();
   }, []);
+
+  const toggleMusic = () => {
+    if (!audioRef.current) return;
+    
+    if (isMusicPlaying) {
+      audioRef.current.pause();
+      setIsMusicPlaying(false);
+    } else {
+      audioRef.current.play().catch(() => {
+        toast.info('点击请帖区域后才能播放音乐');
+      });
+      setIsMusicPlaying(true);
+    }
+  };
+
+  useEffect(() => {
+    const handleClick = () => {
+      if (info?.bgMusic && !isMusicPlaying && audioRef.current) {
+        audioRef.current.play().catch(() => {});
+        setIsMusicPlaying(true);
+      }
+    };
+
+    document.addEventListener('click', handleClick);
+    return () => document.removeEventListener('click', handleClick);
+  }, [info?.bgMusic, isMusicPlaying]);
 
   const handleDownloadImage = async () => {
     if (!previewRef.current) return;
@@ -516,7 +739,7 @@ const WeddingPreview = () => {
   if (!info) return null;
 
   const renderTemplate = () => {
-    const templateId = info.template || 'romantic';
+    const templateId = template || info.template || 'romantic';
     if (templateId === 'classic') return <TemplateClassic info={info} />;
     if (templateId === 'modern') return <TemplateModern info={info} />;
     if (templateId === 'chinese') return <TemplateChinese info={info} />;
@@ -525,34 +748,58 @@ const WeddingPreview = () => {
 
   return (
     <div className="min-h-screen" style={{ background: '#f5f5f5' }}>
-      <div className="max-w-md mx-auto py-6 px-4">
-        <div className="bg-white rounded-xl shadow-lg overflow-hidden mb-4" style={{ maxWidth: '375px', margin: '0 auto' }}>
+      {info?.bgMusic && (
+        <audio ref={audioRef} src={info.bgMusic} loop preload="auto" />
+      )}
+      <div className={`${isMobile ? 'py-0 px-0' : 'py-6 px-4'} max-w-md mx-auto`}>
+        <div className={`${isMobile ? 'rounded-none shadow-none' : 'rounded-xl shadow-lg'} bg-white overflow-hidden`} style={{ maxWidth: '375px', margin: '0 auto' }}>
           <div ref={previewRef}>
             {renderTemplate()}
           </div>
+          
+          {info?.bgMusic && (
+            <button onClick={toggleMusic} className="absolute top-3 right-3 w-10 h-10 rounded-full flex items-center justify-center transition-all hover:scale-110 z-10" style={{ background: isMusicPlaying ? 'rgba(196, 120, 138, 0.9)' : 'rgba(255, 255, 255, 0.85)', boxShadow: '0 2px 10px rgba(0,0,0,0.15)' }}>
+              {isMusicPlaying ? (
+                <Pause className="w-5 h-5 text-white" />
+              ) : (
+                <Play className="w-5 h-5" style={{ color: '#c4788a' }} />
+              )}
+            </button>
+          )}
         </div>
 
-        <div className="flex justify-center gap-3" style={{ maxWidth: '375px', margin: '0 auto' }}>
-          <button onClick={handleCopyLink} className="flex-1 flex items-center justify-center gap-2 py-3 px-4 rounded-xl font-medium transition-all hover:opacity-90" style={{ background: 'white', color: '#2c1810', border: '1px solid #e8d5c4' }}>
+        <div className={`${isMobile ? 'fixed bottom-0 left-0 right-0 bg-white border-t border-[#e8d5c4] px-4 py-3' : ''} flex justify-center gap-3`} style={{ maxWidth: '375px', margin: isMobile ? '0 auto' : '0 auto' }}>
+          {info?.bgMusic && (
+            <button onClick={toggleMusic} className={`flex flex-col items-center justify-center gap-0.5 w-12 h-12 sm:w-auto sm:h-auto sm:flex-row sm:gap-2 sm:px-3 sm:py-2.5 rounded-xl font-medium transition-all hover:opacity-90 text-xs sm:text-sm ${isMusicPlaying ? '' : ''}`} style={{ background: 'white', color: '#2c1810', border: '1px solid #e8d5c4' }}>
+              {isMusicPlaying ? <Pause className="w-4 h-4 sm:w-5 sm:h-5" /> : <Play className="w-4 h-4 sm:w-5 sm:h-5" />}
+              <span className="hidden sm:inline">{isMusicPlaying ? '暂停' : '播放'}</span>
+            </button>
+          )}
+          <button onClick={handleCopyLink} className={`flex-1 flex items-center justify-center gap-2 py-2.5 sm:py-3 px-3 sm:px-4 rounded-xl font-medium transition-all hover:opacity-90 text-sm sm:text-base`} style={{ background: 'white', color: '#2c1810', border: '1px solid #e8d5c4' }}>
             复制链接
           </button>
-          <button onClick={handleDownloadImage} className="flex-1 flex items-center justify-center gap-2 py-3 px-4 rounded-xl font-medium transition-all hover:opacity-90" style={{ background: 'linear-gradient(135deg, #c4788a, #c9a84c)', color: 'white' }}>
+          <button onClick={handleDownloadImage} className={`flex-1 flex items-center justify-center gap-2 py-2.5 sm:py-3 px-3 sm:px-4 rounded-xl font-medium transition-all hover:opacity-90 text-sm sm:text-base`} style={{ background: 'linear-gradient(135deg, #c4788a, #c9a84c)', color: 'white' }}>
             下载图片
           </button>
-          <button onClick={() => setShowQR(true)} className="w-12 h-12 flex items-center justify-center rounded-xl transition-all hover:opacity-90" style={{ background: 'white', border: '1px solid #e8d5c4' }}>
-            <QRCodeCanvas value={window.location.href} size={24} level="M" />
+          <button onClick={() => setShowQR(true)} className={`w-10 h-10 sm:w-12 sm:h-12 flex items-center justify-center rounded-xl transition-all hover:opacity-90`} style={{ background: 'white', border: '1px solid #e8d5c4' }}>
+            <QRCodeCanvas value={window.location.href} size={isMobile ? 20 : 24} level="M" />
           </button>
         </div>
+
+        {isMobile && (
+          <div className="pb-20" />
+        )}
       </div>
 
       {showQR && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onClick={() => setShowQR(false)}>
-          <div className="bg-white rounded-2xl p-6 text-center" onClick={e => e.stopPropagation()}>
-            <h3 className="text-lg font-bold mb-4" style={{ fontFamily: 'Playfair Display, serif', color: '#2c1810' }}>扫码查看请帖</h3>
-            <div className="p-4 bg-white rounded-xl">
-              <QRCodeCanvas value={window.location.href} size={200} level="M" />
+          <div className="bg-white rounded-2xl p-4 sm:p-6 text-center mx-4 max-w-sm w-full" onClick={e => e.stopPropagation()}>
+            <h3 className="text-base sm:text-lg font-bold mb-3 sm:mb-4" style={{ fontFamily: 'Playfair Display, serif', color: '#2c1810' }}>扫码查看请帖</h3>
+            <div className="p-3 sm:p-4 bg-white rounded-xl">
+              <QRCodeCanvas value={window.location.href} size={isMobile ? 160 : 200} level="M" />
             </div>
-            <button onClick={() => setShowQR(false)} className="mt-4 px-6 py-2 rounded-lg" style={{ background: '#c4788a', color: 'white' }}>
+            <p className="text-xs sm:text-sm mt-2" style={{ color: '#8b7355' }}>使用微信或手机相机扫描二维码</p>
+            <button onClick={() => setShowQR(false)} className="mt-3 sm:mt-4 px-4 sm:px-6 py-2 rounded-lg text-sm" style={{ background: '#c4788a', color: 'white' }}>
               关闭
             </button>
           </div>

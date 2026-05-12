@@ -1,5 +1,5 @@
 import React from 'react';
-import { BrowserRouter, Routes, Route } from "react-router-dom";
+import { HashRouter, Routes, Route } from "react-router-dom";
 import { Toaster } from 'sonner';
 import WeddingGenerator from "./pages/WeddingGenerator";
 import WeddingPreview from "./pages/WeddingPreview";
@@ -21,7 +21,7 @@ class ErrorBoundary extends React.Component<
 }
 
 const App = () => (
-  <BrowserRouter basename="/wedding-invitation">
+  <HashRouter>
     <ErrorBoundary>
       <Routes>
         <Route path="/" element={<WeddingGenerator />} />
@@ -29,7 +29,7 @@ const App = () => (
       </Routes>
     </ErrorBoundary>
     <Toaster position="top-right" />
-  </BrowserRouter>
+  </HashRouter>
 );
 
 export default App;

@@ -9,6 +9,7 @@ declare global {
   const Activity: typeof import('react').Activity
   const ArrowLeftIcon: typeof import('lucide-react').ArrowLeftIcon
   const ArrowRightIcon: typeof import('lucide-react').ArrowRightIcon
+  const AudioLines: typeof import('lucide-react').AudioLines
   const Badge: typeof import('lucide-react').Badge
   const Calendar: typeof import('lucide-react').Calendar
   const CalendarIcon: typeof import('lucide-react').CalendarIcon
@@ -56,8 +57,10 @@ declare global {
   const MoreHorizontalIcon: typeof import('lucide-react').MoreHorizontalIcon
   const OctagonXIcon: typeof import('lucide-react').OctagonXIcon
   const PanelLeftIcon: typeof import('lucide-react').PanelLeftIcon
+  const Pause: typeof import('lucide-react').Pause
   const Phone: typeof import('lucide-react').Phone
   const PhoneIcon: typeof import('lucide-react').PhoneIcon
+  const Play: typeof import('lucide-react').Play
   const Plus: typeof import('lucide-react').Plus
   const QrCode: typeof import('lucide-react').QrCode
   const QrCodeIcon: typeof import('lucide-react').QrCodeIcon

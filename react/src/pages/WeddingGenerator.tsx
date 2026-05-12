@@ -1,5 +1,5 @@
 import React, { useState, useRef, useCallback, useEffect } from 'react';
-import { Heart, Calendar, MapPin, Phone, Download, Sparkles, Clock, User, Upload, X, Share2, Link, Image, Check, Copy, Save, QrCode, RefreshCw, Plus, Trash2, GripVertical, ChevronDown, ChevronUp, Type, Layout } from 'lucide-react';
+import { Heart, Calendar, MapPin, Phone, Download, Sparkles, Clock, User, Upload, X, Share2, Link, Image, Check, Copy, Save, QrCode, RefreshCw, Plus, Trash2, GripVertical, ChevronDown, ChevronUp, Type, Layout, AudioLines } from 'lucide-react';
 import html2canvas from 'html2canvas';
 import { toast } from 'sonner';
 import ImageCropper from '../components/ImageCropper';
@@ -23,11 +23,17 @@ export interface WeddingInfo {
   weddingTime: string;
   ceremonyVenue: string;
   banquetVenue: string;
+  ceremonyLat: number;
+  ceremonyLng: number;
+  banquetLat: number;
+  banquetLng: number;
   message: string;
   coverImage: string;
   galleryImages: string[];
   pages: PageModule[];
   defaultFont: string;
+  bgMusic: string;
+  bgMusicName: string;
 }
 
 const fonts = [
@@ -251,7 +257,7 @@ const GalleryUploader = ({ label, value, onChange, maxImages = 6 }) => {
   );
 };
 
-const ShareModal = ({ isOpen, onClose, shareUrl, shortUrl, onDownloadImage }) => {
+const ShareModal = ({ isOpen, onClose, shareUrl, onDownloadImage }) => {
   const [copied, setCopied] = useState(false);
   const [activeTab, setActiveTab] = useState<'link' | 'qr'>('link');
 
@@ -291,67 +297,58 @@ const ShareModal = ({ isOpen, onClose, shareUrl, shortUrl, onDownloadImage }) =>
         </div>
 
         {activeTab === 'link' ? (
-          <>
-            <div className="space-y-3">
-              <button onClick={() => handleCopy(shortUrl || shareUrl)} className="w-full flex items-center gap-3 p-4 rounded-xl transition-all hover:bg-gray-50" style={{ background: '#fdf6f0', border: '1px solid #f0d8c8' }}>
-                <div className="w-10 h-10 rounded-full flex items-center justify-center" style={{ background: '#c9a84c' }}>
-                  {copied ? <Check className="w-5 h-5 text-white" /> : <Link className="w-5 h-5 text-white" />}
-                </div>
-                <div className="text-left flex-1">
-                  <p className="font-semibold text-sm" style={{ color: '#2c1810' }}>{copied ? '已复制!' : '复制短链接'}</p>
-                  <p className="text-xs" style={{ color: '#8b7355' }}>{copied ? '链接已复制到剪贴板' : '分享更短的请帖链接'}</p>
-                </div>
-              </button>
-              
-              {shortUrl && (
-                <div className="p-3 rounded-lg" style={{ background: '#f8f5f0' }}>
-                  <p className="text-xs mb-1" style={{ color: '#8b7355' }}>短链接预览</p>
-                  <p className="text-xs break-all font-mono" style={{ color: '#2c1810' }}>{shortUrl}</p>
-                </div>
-              )}
-              
-              <button onClick={onDownloadImage} className="w-full flex items-center gap-3 p-4 rounded-xl transition-all hover:bg-gray-50" style={{ background: '#fdf6f0', border: '1px solid #f0d8c8' }}>
-                <div className="w-10 h-10 rounded-full flex items-center justify-center" style={{ background: '#c4788a' }}>
-                  <Image className="w-5 h-5 text-white" />
-                </div>
-                <div className="text-left flex-1">
-                  <p className="font-semibold text-sm" style={{ color: '#2c1810' }}>下载图片</p>
-                  <p className="text-xs" style={{ color: '#8b7355' }}>将请帖导出为图片格式</p>
-                </div>
-              </button>
-              
-              <button onClick={() => {
-                if (navigator.share) {
-                  navigator.share({ title: '婚礼请帖', text: '诚挚邀请您参加我们的婚礼', url: shortUrl || shareUrl });
-                } else {
-                  handleCopy(shortUrl || shareUrl);
-                }
-              }} className="w-full flex items-center gap-3 p-4 rounded-xl transition-all hover:bg-gray-50" style={{ background: '#fdf6f0', border: '1px solid #f0d8c8' }}>
-                <div className="w-10 h-10 rounded-full flex items-center justify-center" style={{ background: '#8aab8a' }}>
-                  <Share2 className="w-5 h-5 text-white" />
-                </div>
-                <div className="text-left flex-1">
-                  <p className="font-semibold text-sm" style={{ color: '#2c1810' }}>分享到...</p>
-                  <p className="text-xs" style={{ color: '#8b7355' }}>使用设备原生分享功能</p>
-                </div>
-              </button>
-            </div>
+          <div className="space-y-3">
+            <button onClick={() => handleCopy(shareUrl)} className="w-full flex items-center gap-3 p-4 rounded-xl transition-all hover:bg-gray-50" style={{ background: '#fdf6f0', border: '1px solid #f0d8c8' }}>
+              <div className="w-10 h-10 rounded-full flex items-center justify-center" style={{ background: '#c9a84c' }}>
+                {copied ? <Check className="w-5 h-5 text-white" /> : <Link className="w-5 h-5 text-white" />}
+              </div>
+              <div className="text-left flex-1">
+                <p className="font-semibold text-sm" style={{ color: '#2c1810' }}>{copied ? '已复制!' : '复制链接'}</p>
+                <p className="text-xs" style={{ color: '#8b7355' }}>{copied ? '链接已复制到剪贴板' : '分享您的婚礼请帖链接'}</p>
+              </div>
+            </button>
             
-            {shareUrl && !shortUrl && (
-              <div className="mt-4 p-3 rounded-lg" style={{ background: '#f8f5f0' }}>
-                <p className="text-xs mb-1" style={{ color: '#8b7355' }}>完整链接预览</p>
-                <p className="text-xs break-all" style={{ color: '#2c1810' }}>{shareUrl.length > 60 ? shareUrl.substring(0, 60) + '...' : shareUrl}</p>
+            {shareUrl && (
+              <div className="p-3 rounded-lg" style={{ background: '#f8f5f0' }}>
+                <p className="text-xs mb-1" style={{ color: '#8b7355' }}>链接预览</p>
+                <p className="text-xs break-all font-mono" style={{ color: '#2c1810' }}>{shareUrl.length > 80 ? shareUrl.substring(0, 80) + '...' : shareUrl}</p>
               </div>
             )}
-          </>
+            
+            <button onClick={onDownloadImage} className="w-full flex items-center gap-3 p-4 rounded-xl transition-all hover:bg-gray-50" style={{ background: '#fdf6f0', border: '1px solid #f0d8c8' }}>
+              <div className="w-10 h-10 rounded-full flex items-center justify-center" style={{ background: '#c4788a' }}>
+                <Image className="w-5 h-5 text-white" />
+              </div>
+              <div className="text-left flex-1">
+                <p className="font-semibold text-sm" style={{ color: '#2c1810' }}>下载图片</p>
+                <p className="text-xs" style={{ color: '#8b7355' }}>将请帖导出为图片格式</p>
+              </div>
+            </button>
+            
+            <button onClick={() => {
+              if (navigator.share) {
+                navigator.share({ title: '婚礼请帖', text: '诚挚邀请您参加我们的婚礼', url: shareUrl });
+              } else {
+                handleCopy(shareUrl);
+              }
+            }} className="w-full flex items-center gap-3 p-4 rounded-xl transition-all hover:bg-gray-50" style={{ background: '#fdf6f0', border: '1px solid #f0d8c8' }}>
+              <div className="w-10 h-10 rounded-full flex items-center justify-center" style={{ background: '#8aab8a' }}>
+                <Share2 className="w-5 h-5 text-white" />
+              </div>
+              <div className="text-left flex-1">
+                <p className="font-semibold text-sm" style={{ color: '#2c1810' }}>分享到...</p>
+                <p className="text-xs" style={{ color: '#8b7355' }}>使用设备原生分享功能</p>
+              </div>
+            </button>
+          </div>
         ) : (
           <div className="flex flex-col items-center">
             <div className="p-4 rounded-xl" style={{ background: '#fff' }}>
-              <QRCodeCanvas value={shortUrl || shareUrl} size={180} level="M" />
+              <QRCodeCanvas value={shareUrl} size={180} level="M" />
             </div>
             <p className="text-sm mt-4 text-center" style={{ color: '#2c1810' }}>扫码查看请帖</p>
             <p className="text-xs mt-1 text-center" style={{ color: '#8b7355' }}>使用微信或手机相机扫描二维码</p>
-            <button onClick={() => handleCopy(shortUrl || shareUrl)} className="mt-4 flex items-center gap-2 px-4 py-2 rounded-lg" style={{ background: '#c4788a', color: 'white' }}>
+            <button onClick={() => handleCopy(shareUrl)} className="mt-4 flex items-center gap-2 px-4 py-2 rounded-lg" style={{ background: '#c4788a', color: 'white' }}>
               <Copy className="w-4 h-4" />
               复制链接
             </button>
@@ -730,13 +727,6 @@ const FormField = ({ label, icon, children }) => (
   </div>
 );
 
-const generateShortCode = () => {
-  const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
-  const timestamp = Date.now().toString(36).toUpperCase();
-  const random = Array.from({ length: 4 }, () => chars[Math.floor(Math.random() * chars.length)]).join('');
-  return timestamp + random;
-};
-
 const WeddingInvitationGenerator = () => {
   const [info, setInfo] = useState<WeddingInfo>({
     groomName: '', 
@@ -745,20 +735,36 @@ const WeddingInvitationGenerator = () => {
     weddingTime: '', 
     ceremonyVenue: '', 
     banquetVenue: '', 
+    ceremonyLat: 0,
+    ceremonyLng: 0,
+    banquetLat: 0,
+    banquetLng: 0,
     message: '', 
     coverImage: '', 
     galleryImages: [],
     pages: [],
-    defaultFont: 'cormorant'
+    defaultFont: 'cormorant',
+    bgMusic: '',
+    bgMusicName: ''
   });
   const [activeTemplate, setActiveTemplate] = useState('romantic');
   const [showShareModal, setShowShareModal] = useState(false);
   const [shareUrl, setShareUrl] = useState('');
-  const [shortUrl, setShortUrl] = useState('');
   const [isSaved, setIsSaved] = useState(false);
   const [expandedSections, setExpandedSections] = useState({ basic: true, pages: false, appearance: true });
   const [editingPage, setEditingPage] = useState<string | null>(null);
+  const [mobileView, setMobileView] = useState<'edit' | 'preview'>('edit');
+  const [isMobile, setIsMobile] = useState(false);
   const previewRef = useRef(null);
+
+  useEffect(() => {
+    const checkMobile = () => {
+      setIsMobile(window.innerWidth < 768);
+    };
+    checkMobile();
+    window.addEventListener('resize', checkMobile);
+    return () => window.removeEventListener('resize', checkMobile);
+  }, []);
 
   useEffect(() => {
     const draft = localStorage.getItem('wedding_draft');
@@ -838,7 +844,7 @@ const WeddingInvitationGenerator = () => {
     try {
       const configData = { ...info, template: activeTemplate };
       const encoded = btoa(encodeURIComponent(JSON.stringify(configData)));
-      return `${window.location.origin}/preview?config=${encoded}`;
+      return `${window.location.origin}/#/preview?config=${encoded}`;
     } catch (error) {
       console.error('Failed to generate share URL:', error);
       toast.error('生成分享链接失败');
@@ -849,13 +855,6 @@ const WeddingInvitationGenerator = () => {
   const handleShare = () => {
     const fullUrl = generateShareUrl();
     setShareUrl(fullUrl);
-
-    const shortCode = generateShortCode();
-    const shortUrlData = `${window.location.origin}/preview?short=${shortCode}`;
-    
-    localStorage.setItem(`wedding_short_${shortCode}`, JSON.stringify({ info, template: activeTemplate, createdAt: Date.now() }));
-    
-    setShortUrl(shortUrlData);
     setShowShareModal(true);
   };
 
@@ -891,15 +890,69 @@ const WeddingInvitationGenerator = () => {
         weddingTime: '', 
         ceremonyVenue: '', 
         banquetVenue: '', 
+        ceremonyLat: 0,
+        ceremonyLng: 0,
+        banquetLat: 0,
+        banquetLng: 0,
         message: '', 
         coverImage: '', 
         galleryImages: [],
         pages: [],
-        defaultFont: 'cormorant'
+        defaultFont: 'cormorant',
+        bgMusic: '',
+        bgMusicName: ''
       });
       localStorage.removeItem('wedding_draft');
       toast.info('已重置所有内容');
     }
+  };
+
+  const [showMapModal, setShowMapModal] = useState(false);
+  const [mapSearchType, setMapSearchType] = useState<'ceremony' | 'banquet'>('ceremony');
+  const [mapSearchResults, setMapSearchResults] = useState<any[]>([]);
+  const [mapSearchQuery, setMapSearchQuery] = useState('');
+
+  const handleMapSearch = (type: 'ceremony' | 'banquet') => {
+    setMapSearchType(type);
+    setMapSearchQuery(type === 'ceremony' ? info.ceremonyVenue : info.banquetVenue);
+    setShowMapModal(true);
+  };
+
+  const searchAddress = async () => {
+    if (!mapSearchQuery.trim()) return;
+    
+    try {
+      const response = await fetch(`https://restapi.amap.com/v3/place/text?keywords=${encodeURIComponent(mapSearchQuery)}&city=&output=json&key=cb6fb68b9184a02858f8059867959185`);
+      const data = await response.json();
+      if (data.pois && data.pois.length > 0) {
+        setMapSearchResults(data.pois);
+      } else {
+        setMapSearchResults([]);
+        toast.info('未找到相关地点');
+      }
+    } catch (error) {
+      console.error('地图搜索失败:', error);
+      toast.error('地图搜索失败，请检查网络');
+    }
+  };
+
+  const selectAddress = (address: any) => {
+    const name = address.name || address.formatted_address || address.address;
+    const location = address.location || '';
+    const [lng, lat] = location.split(',').map(Number) || [0, 0];
+    
+    if (mapSearchType === 'ceremony') {
+      updateField('ceremonyVenue', name);
+      updateField('ceremonyLat', lat);
+      updateField('ceremonyLng', lng);
+    } else {
+      updateField('banquetVenue', name);
+      updateField('banquetLat', lat);
+      updateField('banquetLng', lng);
+    }
+    
+    setShowMapModal(false);
+    toast.success('地点选择成功');
   };
 
   const renderTemplate = () => {
@@ -914,43 +967,43 @@ const WeddingInvitationGenerator = () => {
   return (
     <div className="min-h-screen" style={{ background: '#faf7f4' }}>
       <header className="w-full" style={{ background: 'linear-gradient(135deg, #2c1810 0%, #4a1e28 100%)', borderBottom: '1px solid rgba(201,168,76,0.3)' }}>
-        <div className="mx-auto flex items-center justify-between px-8 py-4" style={{ maxWidth: '1440px' }}>
+        <div className="mx-auto flex items-center justify-between px-4 sm:px-8 py-3 sm:py-4" style={{ maxWidth: '1440px' }}>
           <div className="flex items-center gap-3">
-            <Heart className="w-6 h-6" style={{ color: '#c4788a' }} />
+            <Heart className="w-5 h-5 sm:w-6 sm:h-6" style={{ color: '#c4788a' }} />
             <div>
-              <h1 className="text-xl font-bold tracking-wider" style={{ fontFamily: 'Playfair Display, serif', color: '#f0d080' }}>婚礼请帖生成器</h1>
-              <p className="text-xs tracking-widest" style={{ color: 'rgba(201,168,76,0.6)' }}>Wedding Invitation Generator</p>
+              <h1 className="text-base sm:text-xl font-bold tracking-wider" style={{ fontFamily: 'Playfair Display, serif', color: '#f0d080' }}>婚礼请帖生成器</h1>
+              <p className="hidden sm:block text-xs tracking-widest" style={{ color: 'rgba(201,168,76,0.6)' }}>Wedding Invitation Generator</p>
             </div>
           </div>
-          <div className="flex items-center gap-4">
-            <div className={`flex items-center gap-1.5 text-xs ${isSaved ? 'opacity-100' : 'opacity-50'}`} style={{ color: '#8aab8a' }}>
-              <Save className="w-4 h-4" />
-              {isSaved ? '已保存' : '自动保存中...'}
+          <div className="flex items-center gap-2 sm:gap-4">
+            <div className={`flex items-center gap-1 text-xs ${isSaved ? 'opacity-100' : 'opacity-50'}`} style={{ color: '#8aab8a' }}>
+              <Save className="w-3 h-3 sm:w-4 sm:h-4" />
+              {isSaved ? '已保存' : '保存中...'}
             </div>
-            <button onClick={handleReset} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs transition-colors hover:bg-white/10" style={{ color: 'rgba(201,168,76,0.8)' }}>
-              <RefreshCw className="w-4 h-4" />
-              重置
+            <button onClick={handleReset} className="flex items-center gap-1 px-2 py-1 sm:px-3 sm:py-1.5 rounded-lg text-xs transition-colors hover:bg-white/10" style={{ color: 'rgba(201,168,76,0.8)' }}>
+              <RefreshCw className="w-3 h-3 sm:w-4 sm:h-4" />
+              <span className="hidden sm:inline">重置</span>
             </button>
           </div>
         </div>
       </header>
 
-      <div className="mx-auto flex gap-0" style={{ maxWidth: '1440px', minHeight: 'calc(100vh - 64px)' }}>
-        <div className="flex flex-col" style={{ width: '440px', flexShrink: 0, background: '#fffdf9', borderRight: '1px solid #e8d5c4' }}>
-          <div className="px-6 py-4" style={{ borderBottom: '1px solid #e8d5c4', background: 'linear-gradient(135deg, #fdf0e8, #fffdf9)' }}>
-            <h2 className="text-base font-bold tracking-wider" style={{ fontFamily: 'Playfair Display, serif', color: '#2c1810' }}>填写婚礼信息</h2>
+      <div className="mx-auto flex flex-col sm:flex-row gap-0" style={{ maxWidth: '1440px', minHeight: 'calc(100vh - 56px)' }}>
+        <div className={`${isMobile ? (mobileView === 'edit' ? 'block' : 'hidden') : 'block'} flex flex-col`} style={{ width: isMobile ? '100%' : '440px', flexShrink: 0, background: '#fffdf9', borderRight: isMobile ? 'none' : '1px solid #e8d5c4' }}>
+          <div className="px-4 sm:px-6 py-3 sm:py-4" style={{ borderBottom: '1px solid #e8d5c4', background: 'linear-gradient(135deg, #fdf0e8, #fffdf9)' }}>
+            <h2 className="text-sm sm:text-base font-bold tracking-wider" style={{ fontFamily: 'Playfair Display, serif', color: '#2c1810' }}>填写婚礼信息</h2>
             <p className="text-xs mt-0.5" style={{ color: '#8b7355' }}>请填写以下信息，请帖将实时预览更新</p>
           </div>
 
-          <div className="flex-1 overflow-y-auto p-6 space-y-4">
+          <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-3 sm:space-y-4">
             <div className="rounded-lg border overflow-hidden" style={{ borderColor: '#e8d5c4' }}>
-              <button onClick={() => toggleSection('basic')} className="w-full flex items-center justify-between px-4 py-3 hover:bg-[#fdf6f0] transition-colors" style={{ background: '#fff' }}>
+              <button onClick={() => toggleSection('basic')} className="w-full flex items-center justify-between px-3 sm:px-4 py-2.5 sm:py-3 hover:bg-[#fdf6f0] transition-colors" style={{ background: '#fff' }}>
                 <span className="text-sm font-medium" style={{ color: '#2c1810' }}>基本信息</span>
                 {expandedSections.basic ? <ChevronUp className="w-4 h-4" style={{ color: '#8b7355' }} /> : <ChevronDown className="w-4 h-4" style={{ color: '#8b7355' }} />}
               </button>
               {expandedSections.basic && (
-                <div className="px-4 pb-4 space-y-4">
-                  <div className="grid grid-cols-2 gap-4">
+                <div className="px-3 sm:px-4 pb-3 sm:pb-4 space-y-3 sm:space-y-4">
+                  <div className="grid grid-cols-2 gap-3 sm:gap-4">
                     <FormField label="新郎姓名" icon={<User className="w-3 h-3" />}>
                       <input type="text" value={info.groomName} onChange={(e) => updateField('groomName', e.target.value)} placeholder="请输入新郎姓名" className="w-full px-3 py-2 rounded-lg text-sm outline-none transition-all focus:ring-2 ring-offset-1" style={{ background: '#fdf6f0', border: '1px solid #e8d5c4', color: '#2c1810' }} />
                     </FormField>
@@ -959,7 +1012,7 @@ const WeddingInvitationGenerator = () => {
                     </FormField>
                   </div>
 
-                  <div className="grid grid-cols-2 gap-4">
+                  <div className="grid grid-cols-2 gap-3 sm:gap-4">
                     <FormField label="婚礼日期" icon={<Calendar className="w-3 h-3" />}>
                       <input type="date" value={info.weddingDate} onChange={(e) => updateField('weddingDate', e.target.value)} className="w-full px-3 py-2 rounded-lg text-sm outline-none transition-all focus:ring-2 ring-offset-1" style={{ background: '#fdf6f0', border: '1px solid #e8d5c4', color: '#2c1810' }} />
                     </FormField>
@@ -969,11 +1022,23 @@ const WeddingInvitationGenerator = () => {
                   </div>
 
                   <FormField label="仪式地点" icon={<MapPin className="w-3 h-3" />}>
-                    <input type="text" value={info.ceremonyVenue} onChange={(e) => updateField('ceremonyVenue', e.target.value)} placeholder="请输入婚礼仪式地点" className="w-full px-3 py-2 rounded-lg text-sm outline-none transition-all focus:ring-2 ring-offset-1" style={{ background: '#fdf6f0', border: '1px solid #e8d5c4', color: '#2c1810' }} />
+                    <div className="relative">
+                      <input type="text" value={info.ceremonyVenue} onChange={(e) => updateField('ceremonyVenue', e.target.value)} placeholder="请输入婚礼仪式地点" className="w-full px-3 py-2 pr-20 rounded-lg text-sm outline-none transition-all focus:ring-2 ring-offset-1" style={{ background: '#fdf6f0', border: '1px solid #e8d5c4', color: '#2c1810' }} />
+                      <button onClick={() => handleMapSearch('ceremony')} className="absolute right-2 top-1/2 -translate-y-1/2 px-2 py-1 rounded text-xs flex items-center gap-1 transition-colors hover:bg-opacity-80" style={{ background: 'rgba(196, 120, 138, 0.1)', color: '#c4788a' }}>
+                        <MapPin className="w-3 h-3" />
+                        搜索
+                      </button>
+                    </div>
                   </FormField>
 
                   <FormField label="喜宴地点" icon={<MapPin className="w-3 h-3" />}>
-                    <input type="text" value={info.banquetVenue} onChange={(e) => updateField('banquetVenue', e.target.value)} placeholder="请输入喜宴地点" className="w-full px-3 py-2 rounded-lg text-sm outline-none transition-all focus:ring-2 ring-offset-1" style={{ background: '#fdf6f0', border: '1px solid #e8d5c4', color: '#2c1810' }} />
+                    <div className="relative">
+                      <input type="text" value={info.banquetVenue} onChange={(e) => updateField('banquetVenue', e.target.value)} placeholder="请输入喜宴地点" className="w-full px-3 py-2 pr-20 rounded-lg text-sm outline-none transition-all focus:ring-2 ring-offset-1" style={{ background: '#fdf6f0', border: '1px solid #e8d5c4', color: '#2c1810' }} />
+                      <button onClick={() => handleMapSearch('banquet')} className="absolute right-2 top-1/2 -translate-y-1/2 px-2 py-1 rounded text-xs flex items-center gap-1 transition-colors hover:bg-opacity-80" style={{ background: 'rgba(196, 120, 138, 0.1)', color: '#c4788a' }}>
+                        <MapPin className="w-3 h-3" />
+                        搜索
+                      </button>
+                    </div>
                   </FormField>
 
                   <FormField label="新人寄语" icon={<Sparkles className="w-3 h-3" />}>
@@ -999,7 +1064,7 @@ const WeddingInvitationGenerator = () => {
             </div>
 
             <div className="rounded-lg border overflow-hidden" style={{ borderColor: '#e8d5c4' }}>
-              <button onClick={() => toggleSection('pages')} className="w-full flex items-center justify-between px-4 py-3" style={{ background: '#fff' }}>
+              <button onClick={() => toggleSection('pages')} className="w-full flex items-center justify-between px-3 sm:px-4 py-2.5 sm:py-3" style={{ background: '#fff' }}>
                 <div className="flex items-center gap-2">
                   <Layout className="w-4 h-4" style={{ color: '#c9a84c' }} />
                   <span className="text-sm font-medium" style={{ color: '#2c1810' }}>自定义页面</span>
@@ -1010,9 +1075,9 @@ const WeddingInvitationGenerator = () => {
                 {expandedSections.pages ? <ChevronUp className="w-4 h-4" style={{ color: '#8b7355' }} /> : <ChevronDown className="w-4 h-4" style={{ color: '#8b7355' }} />}
               </button>
               {expandedSections.pages && (
-                <div className="px-4 pb-4">
+                <div className="px-3 sm:px-4 pb-3 sm:pb-4">
                   {info.pages.length === 0 ? (
-                    <div className="py-6 text-center" style={{ background: '#fdf6f0', borderRadius: '8px' }}>
+                    <div className="py-4 sm:py-6 text-center" style={{ background: '#fdf6f0', borderRadius: '8px' }}>
                       <Layout className="w-8 h-8 mx-auto mb-2" style={{ color: '#c9a84c' }} />
                       <p className="text-xs" style={{ color: '#8b7355' }}>暂无自定义页面</p>
                       <p className="text-xs mt-1" style={{ color: '#b8a898' }}>点击下方按钮添加页面</p>
@@ -1021,7 +1086,7 @@ const WeddingInvitationGenerator = () => {
                     <div className="space-y-2">
                       {info.pages.map((page, index) => (
                         <div key={page.id} className={`rounded-lg border overflow-hidden transition-all ${editingPage === page.id ? 'ring-2 ring-offset-1 ring-[#c9a84c]' : ''}`} style={{ borderColor: '#e8d5c4' }}>
-                          <div className="flex items-center gap-2 p-3" style={{ background: '#fdf6f0' }}>
+                          <div className="flex items-center gap-2 p-2.5 sm:p-3" style={{ background: '#fdf6f0' }}>
                             <GripVertical className="w-4 h-4 opacity-50" style={{ color: '#8b7355' }} />
                             <span className="text-sm font-medium flex-1" style={{ color: '#2c1810' }}>{page.title}</span>
                             <span className="text-xs px-2 py-0.5 rounded-full" style={{ background: 'rgba(201,168,76,0.15)', color: '#c9a84c' }}>
@@ -1032,7 +1097,7 @@ const WeddingInvitationGenerator = () => {
                             </button>
                           </div>
                           {editingPage === page.id && (
-                            <div className="p-3 space-y-3">
+                            <div className="p-2.5 sm:p-3 space-y-2.5 sm:space-y-3">
                               <input type="text" value={page.title} onChange={(e) => updatePage(page.id, { title: e.target.value })} placeholder="页面标题" className="w-full px-3 py-2 rounded-lg text-sm outline-none" style={{ background: '#fff', border: '1px solid #e8d5c4', color: '#2c1810' }} />
                               {(page.type === 'story' || page.type === 'quote') && (
                                 <textarea value={page.content || ''} onChange={(e) => updatePage(page.id, { content: e.target.value })} placeholder="请输入内容..." rows={3} className="w-full px-3 py-2 rounded-lg text-sm outline-none resize-none" style={{ background: '#fff', border: '1px solid #e8d5c4', color: '#2c1810' }} />
@@ -1119,9 +1184,9 @@ const WeddingInvitationGenerator = () => {
                     </div>
                   )}
                   
-                  <div className="mt-3 flex flex-wrap gap-2">
+                  <div className="mt-2 sm:mt-3 flex flex-wrap gap-1.5 sm:gap-2">
                     {pageTypes.map(type => (
-                      <button key={type.id} onClick={() => addPage(type.id)} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all hover:opacity-80" style={{ background: '#c9a84c', color: 'white' }}>
+                      <button key={type.id} onClick={() => addPage(type.id)} className="flex items-center gap-1 px-2.5 py-1.25 sm:px-3 sm:py-1.5 rounded-lg text-xs font-medium transition-all hover:opacity-80" style={{ background: '#c9a84c', color: 'white' }}>
                         <span>{type.icon}</span>
                         {type.name}
                       </button>
@@ -1132,7 +1197,7 @@ const WeddingInvitationGenerator = () => {
             </div>
 
             <div className="rounded-lg border overflow-hidden" style={{ borderColor: '#e8d5c4' }}>
-              <button onClick={() => toggleSection('appearance')} className="w-full flex items-center justify-between px-4 py-3" style={{ background: '#fff' }}>
+              <button onClick={() => toggleSection('appearance')} className="w-full flex items-center justify-between px-3 sm:px-4 py-2.5 sm:py-3" style={{ background: '#fff' }}>
                 <div className="flex items-center gap-2">
                   <Type className="w-4 h-4" style={{ color: '#c9a84c' }} />
                   <span className="text-sm font-medium" style={{ color: '#2c1810' }}>外观设置</span>
@@ -1140,7 +1205,7 @@ const WeddingInvitationGenerator = () => {
                 {expandedSections.appearance ? <ChevronUp className="w-4 h-4" style={{ color: '#8b7355' }} /> : <ChevronDown className="w-4 h-4" style={{ color: '#8b7355' }} />}
               </button>
               {expandedSections.appearance && (
-                <div className="px-4 pb-4 space-y-4">
+                <div className="px-3 sm:px-4 pb-3 sm:pb-4 space-y-3 sm:space-y-4">
                   <div>
                     <label className="text-xs font-semibold mb-2 block" style={{ color: '#8b7355' }}>默认字体</label>
                     <select value={info.defaultFont} onChange={(e) => updateField('defaultFont', e.target.value)} className="w-full px-3 py-2 rounded-lg text-sm outline-none" style={{ background: '#fdf6f0', border: '1px solid #e8d5c4', color: '#2c1810' }}>
@@ -1156,9 +1221,9 @@ const WeddingInvitationGenerator = () => {
 
                   <div>
                     <label className="text-xs font-semibold mb-2 block" style={{ color: '#8b7355' }}>主题风格</label>
-                    <div className="grid grid-cols-2 gap-2">
+                    <div className="grid grid-cols-2 gap-1.5 sm:gap-2">
                       {templates.map((template) => (
-                        <button key={template.id} onClick={() => setActiveTemplate(template.id)} className={`p-3 rounded-lg text-left transition-all ${activeTemplate === template.id ? `ring-2 ring-offset-1 ring-[${template.color}]` : ''}`} style={{ background: activeTemplate === template.id ? '#fdf6f0' : '#fff' }}>
+                        <button key={template.id} onClick={() => setActiveTemplate(template.id)} className={`p-2.5 sm:p-3 rounded-lg text-left transition-all ${activeTemplate === template.id ? `ring-2 ring-offset-1 ring-[${template.color}]` : ''}`} style={{ background: activeTemplate === template.id ? '#fdf6f0' : '#fff' }}>
                           <div className="flex items-center gap-2 mb-1">
                             <div className="w-3 h-3 rounded-full" style={{ background: template.color }} />
                             <span className="text-sm font-medium" style={{ color: '#2c1810' }}>{template.name}</span>
@@ -1166,6 +1231,50 @@ const WeddingInvitationGenerator = () => {
                           <span className="text-xs" style={{ color: '#8b7355' }}>{template.subtitle}</span>
                         </button>
                       ))}
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="text-xs font-semibold mb-2 block" style={{ color: '#8b7355' }}>背景音乐</label>
+                    <div className={`relative rounded-lg overflow-hidden cursor-pointer transition-all hover:opacity-80 ${info.bgMusic ? 'flex items-center justify-between' : 'flex items-center justify-center'}`} style={{ background: info.bgMusic ? 'rgba(196, 120, 138, 0.07)' : 'linear-gradient(135deg, #fdf6f0 0%, #f8f0e8 100%)', border: info.bgMusic ? '1px solid rgba(196,120,138,0.3)' : '2px dashed #e8d5c4', padding: '12px 14px' }}>
+                      {info.bgMusic ? (
+                        <>
+                          <div className="flex items-center gap-3">
+                            <div className="w-10 h-10 rounded-full flex items-center justify-center" style={{ background: '#c4788a' }}>
+                              <AudioLines className="w-5 h-5 text-white" />
+                            </div>
+                            <div>
+                              <p className="text-sm font-medium truncate max-w-[180px]" style={{ color: '#2c1810' }}>{info.bgMusicName || '背景音乐'}</p>
+                              <p className="text-xs" style={{ color: '#8b7355' }}>支持 MP3 格式，建议小于 5MB</p>
+                            </div>
+                          </div>
+                          <button onClick={(e) => { e.stopPropagation(); updateField('bgMusic', ''); updateField('bgMusicName', ''); }} className="flex items-center gap-1 text-xs px-2 py-1 rounded transition-colors" style={{ color: '#c4788a', background: 'rgba(196,120,138,0.1)' }}>
+                            <X className="w-3 h-3" />
+                            移除
+                          </button>
+                        </>
+                      ) : (
+                        <>
+                          <AudioLines className="w-6 h-6 mr-2" style={{ color: '#c9a84c' }} />
+                          <span className="text-xs" style={{ color: '#8b7355' }}>点击上传背景音乐 (MP3)</span>
+                        </>
+                      )}
+                      <input ref={(el) => { (window as any).musicInput = el; }} type="file" accept="audio/mp3" onChange={(e) => {
+                        const file = e.target.files?.[0];
+                        if (file) {
+                          if (file.size > 5 * 1024 * 1024) {
+                            toast.error('文件大小不能超过 5MB');
+                            return;
+                          }
+                          const reader = new FileReader();
+                          reader.onload = (event) => {
+                            updateField('bgMusic', event.target?.result as string);
+                            updateField('bgMusicName', file.name);
+                            toast.success('音乐上传成功');
+                          };
+                          reader.readAsDataURL(file);
+                        }
+                      }} className="hidden" />
                     </div>
                   </div>
                 </div>
@@ -1179,7 +1288,7 @@ const WeddingInvitationGenerator = () => {
           </div>
         </div>
 
-        <div className="flex-1 bg-gray-50 p-8 overflow-auto">
+        <div className={`${isMobile ? (mobileView === 'preview' ? 'block' : 'hidden') : 'block'} flex-1 bg-gray-50 p-4 sm:p-8 overflow-auto`}>
           <div className="max-w-md mx-auto">
             <div className="bg-white rounded-xl shadow-lg overflow-hidden">
               <div ref={previewRef} className="w-full" style={{ maxWidth: '375px', margin: '0 auto' }}>
@@ -1190,7 +1299,75 @@ const WeddingInvitationGenerator = () => {
         </div>
       </div>
 
-      <ShareModal isOpen={showShareModal} onClose={() => setShowShareModal(false)} shareUrl={shareUrl} shortUrl={shortUrl} onDownloadImage={handleDownloadImage} />
+      {isMobile && (
+        <div className="fixed bottom-0 left-0 right-0 flex items-center justify-around py-2 px-4" style={{ background: '#fffdf9', borderTop: '1px solid #e8d5c4', boxShadow: '0 -2px 10px rgba(0,0,0,0.05)' }}>
+          <button onClick={() => setMobileView('edit')} className={`flex flex-col items-center gap-1 px-6 py-2 rounded-lg transition-all ${mobileView === 'edit' ? 'bg-[#fdf0e8]' : ''}`}>
+            <Layout className="w-5 h-5" style={{ color: mobileView === 'edit' ? '#c9a84c' : '#8b7355' }} />
+            <span className="text-xs" style={{ color: mobileView === 'edit' ? '#c9a84c' : '#8b7355' }}>编辑</span>
+          </button>
+          <button onClick={() => setMobileView('preview')} className={`flex flex-col items-center gap-1 px-6 py-2 rounded-lg transition-all ${mobileView === 'preview' ? 'bg-[#fdf0e8]' : ''}`}>
+            <div className="w-8 h-8 rounded-lg flex items-center justify-center" style={{ background: mobileView === 'preview' ? '#c9a84c' : '#f0e8e0' }}>
+              <Sparkles className="w-4 h-4" style={{ color: mobileView === 'preview' ? 'white' : '#8b7355' }} />
+            </div>
+            <span className="text-xs" style={{ color: mobileView === 'preview' ? '#c9a84c' : '#8b7355' }}>预览</span>
+          </button>
+        </div>
+      )}
+
+      <ShareModal isOpen={showShareModal} onClose={() => setShowShareModal(false)} shareUrl={shareUrl} onDownloadImage={handleDownloadImage} />
+
+      {showMapModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onClick={() => setShowMapModal(false)}>
+          <div className="bg-white rounded-2xl p-4 w-full max-w-md mx-4 max-h-[80vh] flex flex-col" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-lg font-bold" style={{ color: '#2c1810', fontFamily: 'Playfair Display, serif' }}>
+                选择{mapSearchType === 'ceremony' ? '仪式' : '喜宴'}地点
+              </h3>
+              <button onClick={() => setShowMapModal(false)} className="p-1 hover:bg-gray-100 rounded-full transition-colors">
+                <X className="w-5 h-5" style={{ color: '#8b7355' }} />
+              </button>
+            </div>
+            
+            <div className="relative mb-4">
+              <input 
+                type="text" 
+                value={mapSearchQuery} 
+                onChange={(e) => setMapSearchQuery(e.target.value)} 
+                placeholder="输入地点名称搜索"
+                className="w-full px-4 py-2 rounded-xl text-sm outline-none" 
+                style={{ background: '#fdf6f0', border: '1px solid #e8d5c4', color: '#2c1810' }}
+                onKeyPress={(e) => e.key === 'Enter' && searchAddress()}
+              />
+              <button onClick={searchAddress} className="absolute right-2 top-1/2 -translate-y-1/2 px-3 py-1 rounded-lg text-sm font-medium transition-colors hover:opacity-90" style={{ background: 'linear-gradient(135deg, #c4788a, #c9a84c)', color: 'white' }}>
+                搜索
+              </button>
+            </div>
+            
+            <div className="flex-1 overflow-auto space-y-2">
+              {mapSearchResults.length > 0 ? (
+                mapSearchResults.map((item, index) => (
+                  <button 
+                    key={index} 
+                    onClick={() => selectAddress(item)}
+                    className="w-full p-3 text-left rounded-xl transition-colors hover:bg-[#fdf6f0]"
+                    style={{ border: '1px solid #e8d5c4' }}
+                  >
+                    <p className="font-medium text-sm" style={{ color: '#2c1810' }}>{item.name}</p>
+                    <p className="text-xs mt-1" style={{ color: '#8b7355' }}>
+                      {item.formatted_address || item.address || '暂无详细地址'}
+                    </p>
+                  </button>
+                ))
+              ) : (
+                <div className="text-center py-8">
+                  <MapPin className="w-12 h-12 mx-auto mb-3 opacity-50" style={{ color: '#c9a84c' }} />
+                  <p className="text-sm" style={{ color: '#8b7355' }}>输入地点名称进行搜索</p>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
