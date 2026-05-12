@@ -3,6 +3,8 @@ import { Heart, Play, Pause } from 'lucide-react';
 import html2canvas from 'html2canvas';
 import { toast } from 'sonner';
 import { QRCodeCanvas } from 'qrcode.react';
+import FallingPetals from '../components/FallingPetals';
+import '../components/FallingPetals.css';
 
 export interface PageModule {
   id: string;
@@ -34,6 +36,7 @@ export interface WeddingInfo {
   template: string;
   bgMusic: string;
   bgMusicName: string;
+  petalsEnabled: boolean;
 }
 
 const fonts = [
@@ -748,6 +751,7 @@ const WeddingPreview = () => {
 
   return (
     <div className="min-h-screen" style={{ background: '#f5f5f5' }}>
+      <FallingPetals enabled={info?.petalsEnabled || false} />
       {info?.bgMusic && (
         <audio ref={audioRef} src={info.bgMusic} loop preload="auto" />
       )}

@@ -34,6 +34,7 @@ export interface WeddingInfo {
   defaultFont: string;
   bgMusic: string;
   bgMusicName: string;
+  petalsEnabled: boolean;
 }
 
 const fonts = [
@@ -745,7 +746,8 @@ const WeddingInvitationGenerator = () => {
     pages: [],
     defaultFont: 'cormorant',
     bgMusic: '',
-    bgMusicName: ''
+    bgMusicName: '',
+    petalsEnabled: true
   });
   const [activeTemplate, setActiveTemplate] = useState('romantic');
   const [showShareModal, setShowShareModal] = useState(false);
@@ -900,7 +902,8 @@ const WeddingInvitationGenerator = () => {
         pages: [],
         defaultFont: 'cormorant',
         bgMusic: '',
-        bgMusicName: ''
+        bgMusicName: '',
+        petalsEnabled: true
       });
       localStorage.removeItem('wedding_draft');
       toast.info('已重置所有内容');
@@ -1275,6 +1278,19 @@ const WeddingInvitationGenerator = () => {
                           reader.readAsDataURL(file);
                         }
                       }} className="hidden" />
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="text-xs font-semibold mb-2 block" style={{ color: '#8b7355' }}>花瓣飘落效果</label>
+                    <div className="flex items-center justify-between p-3 rounded-lg" style={{ background: '#fdf6f0', border: '1px solid #e8d5c4' }}>
+                      <div className="flex items-center gap-2">
+                        <Sparkles className="w-4 h-4" style={{ color: '#c9a84c' }} />
+                        <span className="text-sm" style={{ color: '#2c1810' }}>开启浪漫花瓣飘落动画</span>
+                      </div>
+                      <button onClick={() => updateField('petalsEnabled', !info.petalsEnabled)} className={`w-10 h-6 rounded-full transition-all relative ${info.petalsEnabled ? 'bg-[#c9a84c]' : 'bg-gray-300'}`}>
+                        <span className={`absolute top-1 w-4 h-4 rounded-full bg-white shadow transition-all ${info.petalsEnabled ? 'left-5' : 'left-1'}`} />
+                      </button>
                     </div>
                   </div>
                 </div>
