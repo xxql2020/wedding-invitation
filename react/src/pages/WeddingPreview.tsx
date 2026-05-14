@@ -37,6 +37,25 @@ export interface WeddingInfo {
   bgMusic: string;
   bgMusicName: string;
   petalsEnabled: boolean;
+  customColor: string;
+  stickers: StickerItem[];
+}
+
+interface SharePayload {
+  info?: WeddingInfo;
+  template?: string;
+  createdAt?: number;
+}
+
+type StickerType = 'rose' | 'heart' | 'bell' | 'fireworks';
+
+interface StickerItem {
+  id: string;
+  type: StickerType;
+  x: number;
+  y: number;
+  size: number;
+  rotation: number;
 }
 
 const fonts = [
@@ -46,6 +65,37 @@ const fonts = [
   { id: 'noto', name: '思源宋体', family: "'Noto Serif SC', serif" },
   { id: 'sans', name: '现代无衬线', family: "'Noto Sans SC', sans-serif" },
 ];
+
+const stickerEmojiMap: Record<StickerType, string> = {
+  rose: '🌹',
+  heart: '💖',
+  bell: '🔔',
+  fireworks: '🎆'
+};
+
+const normalizeWeddingInfo = (data: Partial<WeddingInfo>): WeddingInfo => ({
+  groomName: data.groomName || '',
+  brideName: data.brideName || '',
+  weddingDate: data.weddingDate || '',
+  weddingTime: data.weddingTime || '',
+  ceremonyVenue: data.ceremonyVenue || '',
+  banquetVenue: data.banquetVenue || '',
+  ceremonyLat: data.ceremonyLat || 0,
+  ceremonyLng: data.ceremonyLng || 0,
+  banquetLat: data.banquetLat || 0,
+  banquetLng: data.banquetLng || 0,
+  message: data.message || '',
+  coverImage: data.coverImage || '',
+  galleryImages: Array.isArray(data.galleryImages) ? data.galleryImages : [],
+  pages: Array.isArray(data.pages) ? data.pages : [],
+  defaultFont: data.defaultFont || 'cormorant',
+  template: data.template || 'romantic',
+  bgMusic: data.bgMusic || '',
+  bgMusicName: data.bgMusicName || '',
+  petalsEnabled: data.petalsEnabled ?? true,
+  customColor: data.customColor || '',
+  stickers: Array.isArray(data.stickers) ? data.stickers : []
+});
 
 const generateMapLink = (address: string, lat: number = 0, lng: number = 0): string => {
   const encodedAddress = encodeURIComponent(address);
@@ -293,6 +343,33 @@ const PageModuleRenderer = ({ page, defaultFont, themeColor }) => {
   );
 };
 
+const StickerLayer = ({ stickers }: { stickers: StickerItem[] }) => {
+  if (stickers.length === 0) return null;
+
+  return (
+    <div className="absolute inset-0 pointer-events-none">
+      {stickers.map((sticker) => (
+        <div
+          key={sticker.id}
+          className="absolute flex items-center justify-center"
+          style={{
+            left: `${sticker.x}%`,
+            top: `${sticker.y}%`,
+            width: `${sticker.size + 12}px`,
+            height: `${sticker.size + 12}px`,
+            fontSize: `${sticker.size}px`,
+            lineHeight: 1,
+            transform: `translate(-50%, -50%) rotate(${sticker.rotation}deg)`,
+            zIndex: 20
+          }}
+        >
+          <span>{stickerEmojiMap[sticker.type] || '✨'}</span>
+        </div>
+      ))}
+    </div>
+  );
+};
+
 const TemplateRomantic = ({ info }) => {
   const displayGroom = info.groomName || '新郎姓名';
   const displayBride = info.brideName || '新娘姓名';
@@ -302,17 +379,18 @@ const TemplateRomantic = ({ info }) => {
   const displayBanquet = info.banquetVenue || '喜宴地点';
   const displayMsg = info.message || '愿与你共赴这一场温柔的仪式，见证我们最美好的时刻';
   const defaultFont = fonts.find(f => f.id === info.defaultFont) || fonts[0];
-  const themeColor = '#c4788a';
+  const themeColor = info.customColor || '#c4788a';
+  const accentColor = '#c9a84c';
 
   return (
     <div className="relative w-full overflow-hidden" style={{ background: 'linear-gradient(135deg, #fdf0f0 0%, #fff8f4 40%, #fdf0e8 100%)', minHeight: '700px', fontFamily: defaultFont.family }}>
       {info.coverImage && <div className="absolute inset-0"><img src={info.coverImage} alt="封面" className="w-full h-full object-cover" style={{ opacity: 0.15 }} /></div>}
       
-      <div className="absolute top-0 left-0 right-0 h-1" style={{ background: 'linear-gradient(90deg, transparent, #c4788a, #c9a84c, #c4788a, transparent)' }} />
-      <div className="absolute bottom-0 left-0 right-0 h-1" style={{ background: 'linear-gradient(90deg, transparent, #c4788a, #c9a84c, #c4788a, transparent)' }} />
+      <div className="absolute top-0 left-0 right-0 h-1" style={{ background: `linear-gradient(90deg, transparent, ${themeColor}, ${accentColor}, ${themeColor}, transparent)` }} />
+      <div className="absolute bottom-0 left-0 right-0 h-1" style={{ background: `linear-gradient(90deg, transparent, ${themeColor}, ${accentColor}, ${themeColor}, transparent)` }} />
 
       <div className="relative flex flex-col items-center px-10 py-8 text-center">
-        <p className="text-xs tracking-[0.4em] uppercase mb-2" style={{ color: '#c4788a', fontFamily: 'Playfair Display, serif' }}>Wedding Invitation</p>
+        <p className="text-xs tracking-[0.4em] uppercase mb-2" style={{ color: themeColor, fontFamily: 'Playfair Display, serif' }}>Wedding Invitation</p>
         <p className="text-sm tracking-[0.2em] mb-4" style={{ color: '#8b7355' }}>诚挚邀请您出席</p>
 
         <div className="flex items-center gap-4 mb-2">
@@ -321,8 +399,8 @@ const TemplateRomantic = ({ info }) => {
             <p className="text-xs tracking-widest mt-1" style={{ color: '#8b7355' }}>GROOM</p>
           </div>
           <div className="flex flex-col items-center mx-2">
-            <Heart className="w-7 h-7 mb-1" style={{ color: '#c4788a' }} />
-            <p className="text-xl font-bold" style={{ fontFamily: 'Playfair Display, serif', color: '#c9a84c' }}>&</p>
+            <Heart className="w-7 h-7 mb-1" style={{ color: themeColor }} />
+            <p className="text-xl font-bold" style={{ fontFamily: 'Playfair Display, serif', color: accentColor }}>&</p>
           </div>
           <div className="text-center">
             <p className="text-4xl font-bold" style={{ fontFamily: 'Dancing Script, cursive', color: '#7d2e45' }}>{displayBride}</p>
@@ -333,23 +411,23 @@ const TemplateRomantic = ({ info }) => {
         <p className="text-sm leading-relaxed mb-5 max-w-xs italic" style={{ color: '#6b4c3b' }}>"{displayMsg}"</p>
 
         <div className="w-full max-w-sm space-y-3">
-          <div className="rounded-lg p-3" style={{ background: 'rgba(196, 120, 138, 0.07)', border: '1px solid rgba(196, 120, 138, 0.2)' }}>
-            <p className="text-xs tracking-widest uppercase mb-1" style={{ color: '#c4788a' }}>婚礼日期</p>
+          <div className="rounded-lg p-3" style={{ background: `${themeColor}11`, border: `1px solid ${themeColor}33` }}>
+            <p className="text-xs tracking-widest uppercase mb-1" style={{ color: themeColor }}>婚礼日期</p>
             <p className="text-base font-semibold" style={{ color: '#2c1810', fontFamily: 'Playfair Display, serif' }}>{displayDate} · {displayTime}</p>
           </div>
-          <div className="rounded-lg p-3" style={{ background: 'rgba(201, 168, 76, 0.07)', border: '1px solid rgba(201, 168, 76, 0.2)' }}>
-            <p className="text-xs tracking-widest uppercase mb-1" style={{ color: '#c9a84c' }}>婚礼仪式</p>
-            <button onClick={() => openMapChooser(displayCeremony, info.ceremonyLat, info.ceremonyLng)} className="text-sm underline underline-offset-2 hover:opacity-80 transition-opacity w-full text-left" style={{ color: '#c4788a', background: 'transparent', border: 'none', padding: 0 }}>{displayCeremony}</button>
+          <div className="rounded-lg p-3" style={{ background: `${accentColor}11`, border: `1px solid ${accentColor}33` }}>
+            <p className="text-xs tracking-widest uppercase mb-1" style={{ color: accentColor }}>婚礼仪式</p>
+            <button onClick={() => openMapChooser(displayCeremony, info.ceremonyLat, info.ceremonyLng)} className="text-sm underline underline-offset-2 hover:opacity-80 transition-opacity w-full text-left" style={{ color: themeColor, background: 'transparent', border: 'none', padding: 0 }}>{displayCeremony}</button>
           </div>
-          <div className="rounded-lg p-3" style={{ background: 'rgba(201, 168, 76, 0.07)', border: '1px solid rgba(201, 168, 76, 0.2)' }}>
-            <p className="text-xs tracking-widest uppercase mb-1" style={{ color: '#c9a84c' }}>喜宴地点</p>
-            <button onClick={() => openMapChooser(displayBanquet, info.banquetLat, info.banquetLng)} className="text-sm underline underline-offset-2 hover:opacity-80 transition-opacity w-full text-left" style={{ color: '#c4788a', background: 'transparent', border: 'none', padding: 0 }}>{displayBanquet}</button>
+          <div className="rounded-lg p-3" style={{ background: `${accentColor}11`, border: `1px solid ${accentColor}33` }}>
+            <p className="text-xs tracking-widest uppercase mb-1" style={{ color: accentColor }}>喜宴地点</p>
+            <button onClick={() => openMapChooser(displayBanquet, info.banquetLat, info.banquetLng)} className="text-sm underline underline-offset-2 hover:opacity-80 transition-opacity w-full text-left" style={{ color: themeColor, background: 'transparent', border: 'none', padding: 0 }}>{displayBanquet}</button>
           </div>
         </div>
 
         {info.galleryImages && info.galleryImages.length > 0 && (
           <div className="w-full max-w-sm mt-4">
-            <p className="text-xs tracking-widest uppercase mb-2" style={{ color: '#c4788a' }}>甜蜜瞬间</p>
+            <p className="text-xs tracking-widest uppercase mb-2" style={{ color: themeColor }}>甜蜜瞬间</p>
             <div className="grid grid-cols-3 gap-2">
               {info.galleryImages.slice(0, 3).map((img, i) => (
                 <div key={i} className="aspect-square rounded-lg overflow-hidden"><img src={img} alt={`相册 ${i + 1}`} className="w-full h-full object-cover" /></div>
@@ -377,45 +455,46 @@ const TemplateClassic = ({ info }) => {
   const displayBanquet = info.banquetVenue || '喜宴地点';
   const displayMsg = info.message || '愿与你共赴这一场温柔的仪式，见证我们最美好的时刻';
   const defaultFont = fonts.find(f => f.id === info.defaultFont) || fonts[0];
-  const themeColor = '#c9a84c';
+  const themeColor = info.customColor || '#c9a84c';
+  const lightColor = '#f0d080';
 
   return (
     <div className="relative w-full overflow-hidden" style={{ background: '#1a0a00', minHeight: '700px', fontFamily: defaultFont.family }}>
       {info.coverImage && <div className="absolute inset-0"><img src={info.coverImage} alt="封面" className="w-full h-full object-cover" style={{ opacity: 0.2 }} /></div>}
       
-      <div className="absolute inset-3" style={{ border: '1px solid rgba(201,168,76,0.5)' }} />
-      <div className="absolute inset-5" style={{ border: '1px solid rgba(201,168,76,0.25)' }} />
+      <div className="absolute inset-3" style={{ border: `1px solid ${themeColor}80` }} />
+      <div className="absolute inset-5" style={{ border: `1px solid ${themeColor}40` }} />
 
       <div className="relative flex flex-col items-center px-12 py-8 text-center">
-        <p className="text-xs tracking-[0.5em] uppercase mb-4" style={{ color: '#c9a84c', fontFamily: 'Playfair Display, serif' }}>— Wedding Invitation —</p>
-        <p className="text-2xl mb-2 tracking-[0.3em]" style={{ color: '#f0d080', fontFamily: 'serif' }}>婚 礼 请 帖</p>
+        <p className="text-xs tracking-[0.5em] uppercase mb-4" style={{ color: themeColor, fontFamily: 'Playfair Display, serif' }}>— Wedding Invitation —</p>
+        <p className="text-2xl mb-2 tracking-[0.3em]" style={{ color: lightColor, fontFamily: 'serif' }}>婚 礼 请 帖</p>
 
-        <div className="w-24 my-3" style={{ height: '1px', background: 'linear-gradient(90deg, transparent, #c9a84c, transparent)' }} />
+        <div className="w-24 my-3" style={{ height: '1px', background: `linear-gradient(90deg, transparent, ${themeColor}, transparent)` }} />
 
         <div className="my-3">
           <div className="flex items-baseline justify-center gap-3">
-            <p className="text-5xl" style={{ fontFamily: 'Dancing Script, cursive', color: '#f0d080' }}>{displayGroom}</p>
-            <p className="text-2xl" style={{ color: '#c9a84c' }}>&</p>
-            <p className="text-5xl" style={{ fontFamily: 'Dancing Script, cursive', color: '#f0d080' }}>{displayBride}</p>
+            <p className="text-5xl" style={{ fontFamily: 'Dancing Script, cursive', color: lightColor }}>{displayGroom}</p>
+            <p className="text-2xl" style={{ color: themeColor }}>&</p>
+            <p className="text-5xl" style={{ fontFamily: 'Dancing Script, cursive', color: lightColor }}>{displayBride}</p>
           </div>
           <p className="text-xs tracking-widest mt-2" style={{ color: '#8b6c3a' }}>THE WEDDING OF</p>
         </div>
 
-        <div className="my-3 px-6 py-3 rounded" style={{ border: '1px solid rgba(201,168,76,0.4)', background: 'rgba(201,168,76,0.08)' }}>
-          <p className="text-xl font-bold tracking-wider" style={{ color: '#f0d080', fontFamily: 'Playfair Display, serif' }}>{displayDate}</p>
-          <p className="text-sm mt-1" style={{ color: '#c9a84c' }}>{displayTime}</p>
+        <div className="my-3 px-6 py-3 rounded" style={{ border: `1px solid ${themeColor}60`, background: `${themeColor}14` }}>
+          <p className="text-xl font-bold tracking-wider" style={{ color: lightColor, fontFamily: 'Playfair Display, serif' }}>{displayDate}</p>
+          <p className="text-sm mt-1" style={{ color: themeColor }}>{displayTime}</p>
         </div>
 
         <p className="text-sm leading-relaxed my-3 max-w-xs italic" style={{ color: '#c4a882' }}>"{displayMsg}"</p>
 
         <div className="w-full max-w-xs space-y-2 mt-2">
-          <div className="flex items-start gap-3 text-left py-2" style={{ borderBottom: '1px solid rgba(201,168,76,0.15)' }}>
-            <p className="text-xs tracking-wider whitespace-nowrap mt-0.5" style={{ color: '#c9a84c', minWidth: '56px' }}>仪式地点</p>
-            <button onClick={() => openMapChooser(displayCeremony, info.ceremonyLat, info.ceremonyLng)} className="text-xs leading-relaxed underline underline-offset-2 hover:opacity-80 transition-opacity w-full text-left" style={{ color: '#f0d080', background: 'transparent', border: 'none', padding: 0 }}>{displayCeremony}</button>
+          <div className="flex items-start gap-3 text-left py-2" style={{ borderBottom: `1px solid ${themeColor}25` }}>
+            <p className="text-xs tracking-wider whitespace-nowrap mt-0.5" style={{ color: themeColor, minWidth: '56px' }}>仪式地点</p>
+            <button onClick={() => openMapChooser(displayCeremony, info.ceremonyLat, info.ceremonyLng)} className="text-xs leading-relaxed underline underline-offset-2 hover:opacity-80 transition-opacity w-full text-left" style={{ color: lightColor, background: 'transparent', border: 'none', padding: 0 }}>{displayCeremony}</button>
           </div>
-          <div className="flex items-start gap-3 text-left py-2" style={{ borderBottom: '1px solid rgba(201,168,76,0.15)' }}>
-            <p className="text-xs tracking-wider whitespace-nowrap mt-0.5" style={{ color: '#c9a84c', minWidth: '56px' }}>喜宴地点</p>
-            <button onClick={() => openMapChooser(displayBanquet, info.banquetLat, info.banquetLng)} className="text-xs leading-relaxed underline underline-offset-2 hover:opacity-80 transition-opacity w-full text-left" style={{ color: '#f0d080', background: 'transparent', border: 'none', padding: 0 }}>{displayBanquet}</button>
+          <div className="flex items-start gap-3 text-left py-2" style={{ borderBottom: `1px solid ${themeColor}25` }}>
+            <p className="text-xs tracking-wider whitespace-nowrap mt-0.5" style={{ color: themeColor, minWidth: '56px' }}>喜宴地点</p>
+            <button onClick={() => openMapChooser(displayBanquet, info.banquetLat, info.banquetLng)} className="text-xs leading-relaxed underline underline-offset-2 hover:opacity-80 transition-opacity w-full text-left" style={{ color: lightColor, background: 'transparent', border: 'none', padding: 0 }}>{displayBanquet}</button>
           </div>
         </div>
 
@@ -446,47 +525,48 @@ const TemplateModern = ({ info }) => {
   const displayBanquet = info.banquetVenue || '喜宴地点';
   const displayMsg = info.message || '愿与你共赴这一场温柔的仪式，见证我们最美好的时刻';
   const defaultFont = fonts.find(f => f.id === info.defaultFont) || fonts[0];
-  const themeColor = '#8aab8a';
+  const themeColor = info.customColor || '#8aab8a';
+  const accentColor = info.customColor || '#c4788a';
 
   return (
     <div className="relative w-full overflow-hidden" style={{ background: '#f8f5f0', minHeight: '700px', fontFamily: defaultFont.family }}>
       {info.coverImage && <div className="absolute inset-0"><img src={info.coverImage} alt="封面" className="w-full h-full object-cover" style={{ opacity: 0.1 }} /></div>}
       
-      <div className="absolute left-0 top-0 bottom-0 w-2" style={{ background: 'linear-gradient(180deg, #8aab8a, #c4788a, #c9a84c)' }} />
+      <div className="absolute left-0 top-0 bottom-0 w-2" style={{ background: `linear-gradient(180deg, ${themeColor}, ${accentColor}, #c9a84c)` }} />
 
       <div className="relative flex flex-col pl-12 pr-8 py-10">
-        <p className="text-xs tracking-[0.4em] uppercase mb-6" style={{ color: '#8aab8a', fontFamily: 'Playfair Display, serif' }}>Wedding Invitation</p>
+        <p className="text-xs tracking-[0.4em] uppercase mb-6" style={{ color: themeColor, fontFamily: 'Playfair Display, serif' }}>Wedding Invitation</p>
 
         <div className="mb-4">
           <p className="text-6xl leading-tight" style={{ fontFamily: 'Dancing Script, cursive', color: '#2c1810' }}>{displayGroom}</p>
-          <p className="text-2xl my-1 tracking-widest" style={{ color: '#c4788a' }}>& — & —</p>
+          <p className="text-2xl my-1 tracking-widest" style={{ color: accentColor }}>& — & —</p>
           <p className="text-6xl leading-tight" style={{ fontFamily: 'Dancing Script, cursive', color: '#2c1810' }}>{displayBride}</p>
         </div>
 
-        <div className="w-full my-4" style={{ height: '1px', background: 'linear-gradient(90deg, #c4788a, transparent)' }} />
+        <div className="w-full my-4" style={{ height: '1px', background: `linear-gradient(90deg, ${accentColor}, transparent)` }} />
 
         <p className="text-sm leading-relaxed italic mb-5" style={{ color: '#6b4c3b', maxWidth: '280px' }}>"{displayMsg}"</p>
 
         <div className="space-y-3">
           <div className="flex gap-3 items-start">
-            <div className="w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 text-sm" style={{ background: 'rgba(196, 120, 138, 0.1)' }}>📅</div>
+            <div className="w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 text-sm" style={{ background: `${accentColor}10` }}>📅</div>
             <div>
-              <p className="text-xs tracking-wider uppercase" style={{ color: '#c4788a', marginBottom: '1px' }}>日期与时间</p>
+              <p className="text-xs tracking-wider uppercase" style={{ color: accentColor, marginBottom: '1px' }}>日期与时间</p>
               <p className="text-xs" style={{ color: '#2c1810', lineHeight: 1.5 }}>{displayDate} {displayTime}</p>
             </div>
           </div>
           <div className="flex gap-3 items-start">
-            <div className="w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 text-sm" style={{ background: 'rgba(196, 120, 138, 0.1)' }}>💒</div>
+            <div className="w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 text-sm" style={{ background: `${accentColor}10` }}>💒</div>
             <div>
-              <p className="text-xs tracking-wider uppercase" style={{ color: '#c4788a', marginBottom: '1px' }}>婚礼仪式</p>
-              <button onClick={() => openMapChooser(displayCeremony, info.ceremonyLat, info.ceremonyLng)} className="text-xs underline underline-offset-2 hover:opacity-80 transition-opacity" style={{ color: '#c4788a', lineHeight: 1.5, background: 'transparent', border: 'none', padding: 0 }}>{displayCeremony}</button>
+              <p className="text-xs tracking-wider uppercase" style={{ color: accentColor, marginBottom: '1px' }}>婚礼仪式</p>
+              <button onClick={() => openMapChooser(displayCeremony, info.ceremonyLat, info.ceremonyLng)} className="text-xs underline underline-offset-2 hover:opacity-80 transition-opacity" style={{ color: accentColor, lineHeight: 1.5, background: 'transparent', border: 'none', padding: 0 }}>{displayCeremony}</button>
             </div>
           </div>
           <div className="flex gap-3 items-start">
-            <div className="w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 text-sm" style={{ background: 'rgba(196, 120, 138, 0.1)' }}>🍽</div>
+            <div className="w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 text-sm" style={{ background: `${accentColor}10` }}>🍽</div>
             <div>
-              <p className="text-xs tracking-wider uppercase" style={{ color: '#c4788a', marginBottom: '1px' }}>喜宴地点</p>
-              <button onClick={() => openMapChooser(displayBanquet, info.banquetLat, info.banquetLng)} className="text-xs underline underline-offset-2 hover:opacity-80 transition-opacity" style={{ color: '#c4788a', lineHeight: 1.5, background: 'transparent', border: 'none', padding: 0 }}>{displayBanquet}</button>
+              <p className="text-xs tracking-wider uppercase" style={{ color: accentColor, marginBottom: '1px' }}>喜宴地点</p>
+              <button onClick={() => openMapChooser(displayBanquet, info.banquetLat, info.banquetLng)} className="text-xs underline underline-offset-2 hover:opacity-80 transition-opacity" style={{ color: accentColor, lineHeight: 1.5, background: 'transparent', border: 'none', padding: 0 }}>{displayBanquet}</button>
             </div>
           </div>
         </div>
@@ -504,7 +584,7 @@ const TemplateModern = ({ info }) => {
         ))}
 
         <div className="mt-6 inline-flex items-center gap-2">
-          <Heart className="w-4 h-4" style={{ color: '#c4788a' }} />
+          <Heart className="w-4 h-4" style={{ color: accentColor }} />
           <p className="text-xs tracking-widest" style={{ color: '#b8a898' }}>Forever begins today</p>
         </div>
       </div>
@@ -521,63 +601,63 @@ const TemplateChinese = ({ info }) => {
   const displayBanquet = info.banquetVenue || '喜宴地点';
   const displayMsg = info.message || '愿与你共赴这一场温柔的仪式，见证我们最美好的时刻';
   const defaultFont = fonts.find(f => f.id === info.defaultFont) || fonts[0];
-  const themeColor = '#ffd700';
+  const themeColor = info.customColor || '#ffd700';
 
   return (
     <div className="relative w-full overflow-hidden" style={{ background: 'linear-gradient(160deg, #8b0000 0%, #6b0000 50%, #4a0000 100%)', minHeight: '700px', fontFamily: defaultFont.family }}>
       {info.coverImage && <div className="absolute inset-0"><img src={info.coverImage} alt="封面" className="w-full h-full object-cover" style={{ opacity: 0.15 }} /></div>}
       
-      <div className="absolute inset-4" style={{ border: '2px solid rgba(255,215,0,0.4)', borderRadius: '4px' }} />
-      <div className="absolute inset-6" style={{ border: '1px solid rgba(255,215,0,0.2)', borderRadius: '2px' }} />
+      <div className="absolute inset-4" style={{ border: `2px solid ${themeColor}66`, borderRadius: '4px' }} />
+      <div className="absolute inset-6" style={{ border: `1px solid ${themeColor}33`, borderRadius: '2px' }} />
 
-      <div className="absolute top-8 left-8 text-5xl opacity-20" style={{ color: '#ffd700' }}>囍</div>
-      <div className="absolute top-8 right-8 text-5xl opacity-20" style={{ color: '#ffd700' }}>囍</div>
+      <div className="absolute top-8 left-8 text-5xl opacity-20" style={{ color: themeColor }}>囍</div>
+      <div className="absolute top-8 right-8 text-5xl opacity-20" style={{ color: themeColor }}>囍</div>
 
       <div className="relative flex flex-col items-center px-10 py-8 text-center">
         <div className="mb-2">
-          <p className="text-3xl tracking-[0.5em] font-bold" style={{ color: '#ffd700', fontFamily: 'serif' }}>喜</p>
-          <p className="text-xs tracking-[0.4em] mt-1" style={{ color: 'rgba(255,215,0,0.7)' }}>— 婚 礼 请 帖 —</p>
+          <p className="text-3xl tracking-[0.5em] font-bold" style={{ color: themeColor, fontFamily: 'serif' }}>喜</p>
+          <p className="text-xs tracking-[0.4em] mt-1" style={{ color: `${themeColor}aa` }}>— 婚 礼 请 帖 —</p>
         </div>
 
-        <div className="w-40 my-3" style={{ height: '1px', background: 'linear-gradient(90deg, transparent, #ffd700, transparent)' }} />
+        <div className="w-40 my-3" style={{ height: '1px', background: `linear-gradient(90deg, transparent, ${themeColor}, transparent)` }} />
 
         <div className="flex items-center justify-center gap-3 my-2">
           <div className="text-center">
-            <p className="text-3xl font-bold tracking-widest" style={{ color: '#ffd700', fontFamily: 'serif' }}>{displayGroom}</p>
-            <p className="text-xs mt-1" style={{ color: 'rgba(255,215,0,0.6)' }}>新 郎</p>
+            <p className="text-3xl font-bold tracking-widest" style={{ color: themeColor, fontFamily: 'serif' }}>{displayGroom}</p>
+            <p className="text-xs mt-1" style={{ color: `${themeColor}99` }}>新 郎</p>
           </div>
-          <div className="text-4xl mx-2 font-bold" style={{ color: '#ffd700' }}>❤</div>
+          <div className="text-4xl mx-2 font-bold" style={{ color: themeColor }}>❤</div>
           <div className="text-center">
-            <p className="text-3xl font-bold tracking-widest" style={{ color: '#ffd700', fontFamily: 'serif' }}>{displayBride}</p>
-            <p className="text-xs mt-1" style={{ color: 'rgba(255,215,0,0.6)' }}>新 娘</p>
+            <p className="text-3xl font-bold tracking-widest" style={{ color: themeColor, fontFamily: 'serif' }}>{displayBride}</p>
+            <p className="text-xs mt-1" style={{ color: `${themeColor}99` }}>新 娘</p>
           </div>
         </div>
 
-        <div className="w-40 my-3" style={{ height: '1px', background: 'linear-gradient(90deg, transparent, #ffd700, transparent)' }} />
+        <div className="w-40 my-3" style={{ height: '1px', background: `linear-gradient(90deg, transparent, ${themeColor}, transparent)` }} />
 
-        <p className="text-sm leading-loose my-2 tracking-wider max-w-xs" style={{ color: 'rgba(255,215,0,0.85)' }}>{displayMsg}</p>
+        <p className="text-sm leading-loose my-2 tracking-wider max-w-xs" style={{ color: `${themeColor}dd` }}>{displayMsg}</p>
 
-        <p className="text-2xl my-2 tracking-widest opacity-60" style={{ color: '#ffd700' }}>✿ ✿ ✿</p>
+        <p className="text-2xl my-2 tracking-widest opacity-60" style={{ color: themeColor }}>✿ ✿ ✿</p>
 
         <div className="w-full max-w-xs mt-2 space-y-2">
-          <div className="flex items-center gap-2" style={{ borderBottom: '1px solid rgba(255,215,0,0.15)', paddingBottom: '6px' }}>
-            <span className="text-sm font-bold tracking-widest" style={{ color: '#ffd700', minWidth: '28px' }}>吉日</span>
-            <span className="text-sm" style={{ color: 'rgba(255,215,0,0.8)', lineHeight: 1.6 }}>{displayDate}  {displayTime}</span>
+          <div className="flex items-center gap-2" style={{ borderBottom: `1px solid ${themeColor}25`, paddingBottom: '6px' }}>
+            <span className="text-sm font-bold tracking-widest" style={{ color: themeColor, minWidth: '28px' }}>吉日</span>
+            <span className="text-sm" style={{ color: `${themeColor}cc`, lineHeight: 1.6 }}>{displayDate}  {displayTime}</span>
           </div>
-          <div className="flex items-center gap-2" style={{ borderBottom: '1px solid rgba(255,215,0,0.15)', paddingBottom: '6px' }}>
-            <span className="text-sm font-bold tracking-widest" style={{ color: '#ffd700', minWidth: '28px' }}>仪式</span>
-            <button onClick={() => openMapChooser(displayCeremony, info.ceremonyLat, info.ceremonyLng)} className="text-sm underline underline-offset-2 hover:opacity-80 transition-opacity" style={{ color: '#ffd700', lineHeight: 1.6, background: 'transparent', border: 'none', padding: 0 }}>{displayCeremony}</button>
+          <div className="flex items-center gap-2" style={{ borderBottom: `1px solid ${themeColor}25`, paddingBottom: '6px' }}>
+            <span className="text-sm font-bold tracking-widest" style={{ color: themeColor, minWidth: '28px' }}>仪式</span>
+            <button onClick={() => openMapChooser(displayCeremony, info.ceremonyLat, info.ceremonyLng)} className="text-sm underline underline-offset-2 hover:opacity-80 transition-opacity" style={{ color: themeColor, lineHeight: 1.6, background: 'transparent', border: 'none', padding: 0 }}>{displayCeremony}</button>
           </div>
-          <div className="flex items-center gap-2" style={{ borderBottom: '1px solid rgba(255,215,0,0.15)', paddingBottom: '6px' }}>
-            <span className="text-sm font-bold tracking-widest" style={{ color: '#ffd700', minWidth: '28px' }}>喜宴</span>
-            <button onClick={() => openMapChooser(displayBanquet, info.banquetLat, info.banquetLng)} className="text-sm underline underline-offset-2 hover:opacity-80 transition-opacity" style={{ color: '#ffd700', lineHeight: 1.6, background: 'transparent', border: 'none', padding: 0 }}>{displayBanquet}</button>
+          <div className="flex items-center gap-2" style={{ borderBottom: `1px solid ${themeColor}25`, paddingBottom: '6px' }}>
+            <span className="text-sm font-bold tracking-widest" style={{ color: themeColor, minWidth: '28px' }}>喜宴</span>
+            <button onClick={() => openMapChooser(displayBanquet, info.banquetLat, info.banquetLng)} className="text-sm underline underline-offset-2 hover:opacity-80 transition-opacity" style={{ color: themeColor, lineHeight: 1.6, background: 'transparent', border: 'none', padding: 0 }}>{displayBanquet}</button>
           </div>
         </div>
 
         {info.galleryImages && info.galleryImages.length > 0 && (
           <div className="flex gap-2 mt-4 justify-center">
             {info.galleryImages.slice(0, 3).map((img, i) => (
-              <div key={i} className="w-16 h-16 rounded-lg overflow-hidden border border-gold-400"><img src={img} alt={`相册 ${i + 1}`} className="w-full h-full object-cover" /></div>
+              <div key={i} className="w-16 h-16 rounded-lg overflow-hidden" style={{ border: `2px solid ${themeColor}66` }}><img src={img} alt={`相册 ${i + 1}`} className="w-full h-full object-cover" /></div>
             ))}
           </div>
         )}
@@ -586,7 +666,77 @@ const TemplateChinese = ({ info }) => {
           <PageModuleRenderer key={page.id} page={page} defaultFont={info.defaultFont} themeColor={themeColor} />
         ))}
 
-        <p className="mt-6 text-xs tracking-widest" style={{ color: 'rgba(255,215,0,0.4)' }}>百年好合 · 永结同心</p>
+        <p className="mt-6 text-xs tracking-widest" style={{ color: `${themeColor}66` }}>百年好合 · 永结同心</p>
+      </div>
+    </div>
+  );
+};
+
+const TemplateKorean = ({ info }) => {
+  const displayGroom = info.groomName || '新郎姓名';
+  const displayBride = info.brideName || '新娘姓名';
+  const displayDate = info.weddingDate ? new Date(info.weddingDate).toLocaleDateString('zh-CN', { year: 'numeric', month: 'long', day: 'numeric' }) : '2025年6月15日';
+  const displayTime = info.weddingTime || '11:00';
+  const displayCeremony = info.ceremonyVenue || '婚礼仪式地点';
+  const displayBanquet = info.banquetVenue || '喜宴地点';
+  const displayMsg = info.message || '愿温柔的时光停留在这一天，诚挚邀请您见证我们的幸福。';
+  const defaultFont = fonts.find(f => f.id === info.defaultFont) || fonts[0];
+  const themeColor = info.customColor || '#b8a79a';
+  const accentColor = '#e9ddd2';
+  const textColor = '#5f534b';
+
+  return (
+    <div className="relative w-full overflow-hidden" style={{ background: 'linear-gradient(180deg, #f7f2ed 0%, #fdfaf7 55%, #f4ede6 100%)', minHeight: '700px', fontFamily: defaultFont.family }}>
+      {info.coverImage && <div className="absolute inset-0"><img src={info.coverImage} alt="封面" className="w-full h-full object-cover" style={{ opacity: 0.08, filter: 'blur(2px)' }} /></div>}
+
+      <div className="absolute top-6 left-6 right-6 bottom-6 rounded-[32px]" style={{ border: `1px solid ${themeColor}40`, background: 'rgba(255,255,255,0.35)' }} />
+
+      <div className="relative flex flex-col items-center px-10 py-10 text-center">
+        <p className="text-[10px] tracking-[0.45em] uppercase" style={{ color: themeColor, fontFamily: 'Playfair Display, serif' }}>Wedding Day</p>
+        <div className="w-12 h-12 rounded-full flex items-center justify-center mt-4 mb-5" style={{ background: `${accentColor}dd`, color: themeColor }}>
+          <Heart className="w-5 h-5" />
+        </div>
+
+        <p className="text-5xl leading-none" style={{ color: textColor, fontFamily: 'Dancing Script, cursive' }}>{displayGroom}</p>
+        <p className="text-sm my-2" style={{ color: '#cdb8aa' }}>&</p>
+        <p className="text-5xl leading-none" style={{ color: textColor, fontFamily: 'Dancing Script, cursive' }}>{displayBride}</p>
+
+        <div className="mt-6 mb-5 px-5 py-4 rounded-[24px] w-full max-w-sm" style={{ background: 'rgba(255,255,255,0.7)', border: `1px solid ${accentColor}` }}>
+          <p className="text-xs tracking-[0.3em] uppercase mb-2" style={{ color: themeColor }}>Save The Date</p>
+          <p className="text-lg" style={{ color: '#4d433d', fontFamily: 'Playfair Display, serif' }}>{displayDate}</p>
+          <p className="text-sm mt-1" style={{ color: textColor }}>{displayTime}</p>
+        </div>
+
+        <p className="text-sm leading-7 max-w-xs mb-6" style={{ color: textColor }}>{displayMsg}</p>
+
+        <div className="w-full max-w-sm space-y-3">
+          <div className="rounded-[22px] px-5 py-4 text-left" style={{ background: 'rgba(255,255,255,0.72)', border: `1px solid ${accentColor}` }}>
+            <p className="text-[10px] tracking-[0.3em] uppercase mb-2" style={{ color: themeColor }}>Ceremony</p>
+            <button onClick={() => openMapChooser(displayCeremony, info.ceremonyLat, info.ceremonyLng)} className="text-sm underline underline-offset-2 hover:opacity-80 transition-opacity w-full text-left" style={{ color: textColor, background: 'transparent', border: 'none', padding: 0 }}>{displayCeremony}</button>
+          </div>
+          <div className="rounded-[22px] px-5 py-4 text-left" style={{ background: 'rgba(255,255,255,0.72)', border: `1px solid ${accentColor}` }}>
+            <p className="text-[10px] tracking-[0.3em] uppercase mb-2" style={{ color: themeColor }}>Reception</p>
+            <button onClick={() => openMapChooser(displayBanquet, info.banquetLat, info.banquetLng)} className="text-sm underline underline-offset-2 hover:opacity-80 transition-opacity w-full text-left" style={{ color: textColor, background: 'transparent', border: 'none', padding: 0 }}>{displayBanquet}</button>
+          </div>
+        </div>
+
+        {info.galleryImages && info.galleryImages.length > 0 && (
+          <div className="w-full max-w-sm mt-5">
+            <div className="grid grid-cols-3 gap-2">
+              {info.galleryImages.slice(0, 3).map((img, i) => (
+                <div key={i} className="aspect-[3/4] rounded-[18px] overflow-hidden shadow-sm">
+                  <img src={img} alt={`相册 ${i + 1}`} className="w-full h-full object-cover" />
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {info.pages && info.pages.map(page => (
+          <PageModuleRenderer key={page.id} page={page} defaultFont={info.defaultFont} themeColor={themeColor} />
+        ))}
+
+        <p className="mt-6 text-[11px] tracking-[0.25em] uppercase" style={{ color: '#c3b1a4' }}>With Love And Gratitude</p>
       </div>
     </div>
   );
@@ -628,12 +778,12 @@ const WeddingPreview = () => {
             const parsed = JSON.parse(stored);
             // 正确处理存储的数据结构 { info, template, createdAt }
             if (parsed.info) {
-              setInfo(parsed.info);
+              setInfo(normalizeWeddingInfo(parsed.info));
               if (parsed.template) {
                 setTemplate(parsed.template);
               }
             } else {
-              setInfo(parsed);
+              setInfo(normalizeWeddingInfo(parsed));
             }
           } catch (e) {
             setError('无法加载请帖数据');
@@ -643,14 +793,18 @@ const WeddingPreview = () => {
         }
       } else if (configParam) {
         try {
-          const decoded = JSON.parse(decodeURIComponent(atob(configParam)));
-          // 完整链接格式：{ ...info, template }
-          if (decoded.template) {
+          const decoded = JSON.parse(decodeURIComponent(atob(configParam))) as SharePayload | WeddingInfo;
+          if ('info' in decoded && decoded.info) {
+            setInfo(normalizeWeddingInfo(decoded.info));
+            if (decoded.template) {
+              setTemplate(decoded.template);
+            }
+          } else if ('template' in decoded && decoded.template) {
             setTemplate(decoded.template);
-            const { template: _, ...infoData } = decoded;
-            setInfo(infoData as WeddingInfo);
+            const { template: _template, ...infoData } = decoded;
+            setInfo(normalizeWeddingInfo(infoData as Partial<WeddingInfo>));
           } else {
-            setInfo(decoded);
+            setInfo(normalizeWeddingInfo(decoded as Partial<WeddingInfo>));
           }
         } catch (e) {
           setError('无法解析请帖链接');
@@ -663,6 +817,76 @@ const WeddingPreview = () => {
 
     loadData();
   }, []);
+
+  useEffect(() => {
+    if (!info) return;
+
+    const updateMetaTags = () => {
+      const groom = info.groomName || '新郎';
+      const bride = info.brideName || '新娘';
+      const weddingDate = info.weddingDate ? new Date(info.weddingDate).toLocaleDateString('zh-CN', { year: 'numeric', month: 'long', day: 'numeric' }) : '';
+      
+      // 动态更新页面标题
+      document.title = `${groom} & ${bride} 的婚礼邀请函`;
+
+      // 更新 Open Graph 标签
+      const ogTags = {
+        'og:title': `${groom} & ${bride} 的婚礼邀请函`,
+        'og:description': weddingDate ? `${groom}与${bride}诚邀您出席${weddingDate}的婚礼` : `${groom}与${bride}诚邀您出席我们的婚礼`,
+        'og:url': window.location.href
+      };
+
+      Object.entries(ogTags).forEach(([property, content]) => {
+        let tag = document.querySelector(`meta[property="${property}"]`);
+        if (!tag) {
+          tag = document.createElement('meta');
+          tag.setAttribute('property', property);
+          document.head.appendChild(tag);
+        }
+        tag.setAttribute('content', content);
+      });
+
+      // 更新普通 meta 标签
+      const metaTags = {
+        'description': weddingDate ? `${groom}与${bride}诚邀您出席${weddingDate}的婚礼` : `${groom}与${bride}诚邀您出席我们的婚礼`
+      };
+
+      Object.entries(metaTags).forEach(([name, content]) => {
+        const tag = document.querySelector(`meta[name="${name}"]`);
+        if (tag) {
+          tag.setAttribute('content', content);
+        }
+      });
+
+      // 更新 Twitter 标签
+      const twitterTags = {
+        'twitter:title': `${groom} & ${bride} 的婚礼邀请函`,
+        'twitter:description': weddingDate ? `${groom}与${bride}诚邀您出席${weddingDate}的婚礼` : `${groom}与${bride}诚邀您出席我们的婚礼`
+      };
+
+      Object.entries(twitterTags).forEach(([name, content]) => {
+        const tag = document.querySelector(`meta[name="${name}"]`);
+        if (tag) {
+          tag.setAttribute('content', content);
+        }
+      });
+
+      // 更新微信自定义标签
+      const wxTags = {
+        'wx:title': `${groom} & ${bride} 的婚礼邀请函`,
+        'wx:description': weddingDate ? `${groom}与${bride}诚邀您出席${weddingDate}的婚礼` : `${groom}与${bride}诚邀您出席我们的婚礼`
+      };
+
+      Object.entries(wxTags).forEach(([name, content]) => {
+        const tag = document.querySelector(`meta[name="${name}"]`);
+        if (tag) {
+          tag.setAttribute('content', content);
+        }
+      });
+    };
+
+    updateMetaTags();
+  }, [info]);
 
   const toggleMusic = () => {
     if (!audioRef.current) return;
@@ -743,10 +967,18 @@ const WeddingPreview = () => {
 
   const renderTemplate = () => {
     const templateId = template || info.template || 'romantic';
-    if (templateId === 'classic') return <TemplateClassic info={info} />;
-    if (templateId === 'modern') return <TemplateModern info={info} />;
-    if (templateId === 'chinese') return <TemplateChinese info={info} />;
-    return <TemplateRomantic info={info} />;
+    let templateNode = <TemplateRomantic info={info} />;
+    if (templateId === 'classic') templateNode = <TemplateClassic info={info} />;
+    if (templateId === 'modern') templateNode = <TemplateModern info={info} />;
+    if (templateId === 'chinese') templateNode = <TemplateChinese info={info} />;
+    if (templateId === 'korean') templateNode = <TemplateKorean info={info} />;
+
+    return (
+      <>
+        {templateNode}
+        <StickerLayer stickers={info.stickers || []} />
+      </>
+    );
   };
 
   return (
@@ -757,7 +989,7 @@ const WeddingPreview = () => {
       )}
       <div className={`${isMobile ? 'py-0 px-0' : 'py-6 px-4'} max-w-md mx-auto`}>
         <div className={`${isMobile ? 'rounded-none shadow-none' : 'rounded-xl shadow-lg'} bg-white overflow-hidden`} style={{ maxWidth: '375px', margin: '0 auto' }}>
-          <div ref={previewRef}>
+          <div ref={previewRef} className="relative">
             {renderTemplate()}
           </div>
           

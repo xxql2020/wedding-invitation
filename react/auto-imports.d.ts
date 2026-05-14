@@ -85,6 +85,7 @@ declare global {
   const Table: typeof import('lucide-react').Table
   const Trash2: typeof import('lucide-react').Trash2
   const TriangleAlertIcon: typeof import('lucide-react').TriangleAlertIcon
+  const Twitter: typeof import('lucide-react').Twitter
   const Type: typeof import('lucide-react').Type
   const Upload: typeof import('lucide-react').Upload
   const UploadIcon: typeof import('lucide-react').UploadIcon

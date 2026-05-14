@@ -35,7 +35,137 @@ export interface WeddingInfo {
   bgMusic: string;
   bgMusicName: string;
   petalsEnabled: boolean;
+  customColor: string;
+  stickers: StickerItem[];
 }
+
+type StickerType = 'rose' | 'heart' | 'bell' | 'fireworks';
+
+interface StickerItem {
+  id: string;
+  type: StickerType;
+  x: number;
+  y: number;
+  size: number;
+  rotation: number;
+}
+
+interface SharePayload {
+  info: WeddingInfo;
+  template: string;
+  createdAt: number;
+}
+
+interface AmapPoi {
+  name?: string;
+  formatted_address?: string;
+  address?: string;
+  location?: string;
+}
+
+interface AmapSearchResponse {
+  pois?: AmapPoi[];
+}
+
+const DEFAULT_TEMPLATE = 'romantic';
+const LOCAL_SHARE_PREFIX = 'wedding_short_';
+const MAX_SHARE_URL_LENGTH = 1800;
+
+const DEFAULT_WEDDING_INFO: WeddingInfo = {
+  groomName: '',
+  brideName: '',
+  weddingDate: '',
+  weddingTime: '',
+  ceremonyVenue: '',
+  banquetVenue: '',
+  ceremonyLat: 0,
+  ceremonyLng: 0,
+  banquetLat: 0,
+  banquetLng: 0,
+  message: '',
+  coverImage: '',
+  galleryImages: [],
+  pages: [],
+  defaultFont: 'cormorant',
+  bgMusic: '',
+  bgMusicName: '',
+  petalsEnabled: true,
+  customColor: '',
+  stickers: []
+};
+
+const cloneDefaultWeddingInfo = (): WeddingInfo => ({
+  ...DEFAULT_WEDDING_INFO,
+  galleryImages: [],
+  pages: [],
+  stickers: []
+});
+
+const hasStoredDraft = (): boolean => {
+  if (typeof window === 'undefined') return false;
+  return Boolean(window.localStorage.getItem('wedding_draft'));
+};
+
+const loadDraftFromStorage = (): WeddingInfo => {
+  if (typeof window === 'undefined') {
+    return cloneDefaultWeddingInfo();
+  }
+
+  const draft = window.localStorage.getItem('wedding_draft');
+  if (!draft) {
+    return cloneDefaultWeddingInfo();
+  }
+
+  try {
+    const savedInfo = JSON.parse(draft) as Partial<WeddingInfo>;
+    return {
+      ...cloneDefaultWeddingInfo(),
+      ...savedInfo,
+      galleryImages: Array.isArray(savedInfo.galleryImages) ? savedInfo.galleryImages : [],
+      pages: Array.isArray(savedInfo.pages) ? savedInfo.pages : [],
+      stickers: Array.isArray(savedInfo.stickers) ? savedInfo.stickers : []
+    };
+  } catch (error) {
+    console.error('Failed to load draft:', error);
+    return cloneDefaultWeddingInfo();
+  }
+};
+
+const loadTemplateFromStorage = (): string => {
+  if (typeof window === 'undefined') return DEFAULT_TEMPLATE;
+  return window.localStorage.getItem('wedding_template') || DEFAULT_TEMPLATE;
+};
+
+const buildSharePayload = (info: WeddingInfo, template: string): SharePayload => ({
+  info,
+  template,
+  createdAt: Date.now()
+});
+
+const buildConfigShareUrl = (payload: SharePayload): string => {
+  const encoded = btoa(encodeURIComponent(JSON.stringify(payload)));
+  return `${window.location.origin}/#/preview?config=${encoded}`;
+};
+
+const createShortCode = (): string => {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    return crypto.randomUUID().replace(/-/g, '').slice(0, 10);
+  }
+
+  return `local${Date.now().toString(36)}`;
+};
+
+const buildShortShareUrl = (payload: SharePayload): string => {
+  const shortCode = createShortCode();
+  window.localStorage.setItem(`${LOCAL_SHARE_PREFIX}${shortCode}`, JSON.stringify(payload));
+  return `${window.location.origin}/#/preview?short=${shortCode}`;
+};
+
+const getFileFromInputEvent = (event: Event): File | null => {
+  const target = event.target;
+  if (!(target instanceof HTMLInputElement)) return null;
+  return target.files?.[0] ?? null;
+};
 
 const fonts = [
   { id: 'cormorant', name: '优雅衬线', family: "'Cormorant Garamond', serif" },
@@ -44,6 +174,19 @@ const fonts = [
   { id: 'noto', name: '思源宋体', family: "'Noto Serif SC', serif" },
   { id: 'sans', name: '现代无衬线', family: "'Noto Sans SC', sans-serif" },
 ];
+
+const stickerOptions: Array<{ id: StickerType; label: string; emoji: string }> = [
+  { id: 'rose', label: '玫瑰花', emoji: '🌹' },
+  { id: 'heart', label: '爱心', emoji: '💖' },
+  { id: 'bell', label: '铃铛', emoji: '🔔' },
+  { id: 'fireworks', label: '烟花', emoji: '🎆' }
+];
+
+const clamp = (value: number, min: number, max: number) => Math.min(Math.max(value, min), max);
+
+const getStickerEmoji = (type: StickerType) => {
+  return stickerOptions.find(option => option.id === type)?.emoji || '✨';
+};
 
 const pageTypes = [
   { id: 'gallery', name: '相册集', icon: '📷', description: '展示多张照片' },
@@ -173,6 +316,8 @@ const ImageUploader = ({ label, value, onChange, aspectRatio = 4 / 3, placeholde
 };
 
 const GalleryUploader = ({ label, value, onChange, maxImages = 6 }) => {
+  // 确保 value 始终是数组
+  const images = Array.isArray(value) ? value : [];
   const inputRef = useRef(null);
   const [showCropper, setShowCropper] = useState(false);
   const [tempImage, setTempImage] = useState('');
@@ -180,7 +325,7 @@ const GalleryUploader = ({ label, value, onChange, maxImages = 6 }) => {
 
   const handleFileChange = (e) => {
     const files = Array.from(e.target.files || []);
-    if (files.length + value.length > maxImages) {
+    if (files.length + images.length > maxImages) {
       toast.error(`最多只能上传 ${maxImages} 张图片`);
       return;
     }
@@ -191,10 +336,10 @@ const GalleryUploader = ({ label, value, onChange, maxImages = 6 }) => {
         const result = event.target?.result as string;
         if (index === 0) {
           setTempImage(result);
-          setCurrentIndex(value.length);
+          setCurrentIndex(images.length);
           setShowCropper(true);
         } else {
-          onChange([...value, result]);
+          onChange([...images, result]);
         }
       };
       reader.readAsDataURL(file);
@@ -204,7 +349,7 @@ const GalleryUploader = ({ label, value, onChange, maxImages = 6 }) => {
   };
 
   const handleCropComplete = (croppedImage) => {
-    const newImages = [...value];
+    const newImages = [...images];
     if (currentIndex >= 0 && currentIndex <= newImages.length) {
       newImages.splice(currentIndex, 0, croppedImage);
     }
@@ -216,7 +361,7 @@ const GalleryUploader = ({ label, value, onChange, maxImages = 6 }) => {
   };
 
   const handleRemove = (index) => {
-    const newImages = [...value];
+    const newImages = [...images];
     newImages.splice(index, 1);
     onChange(newImages);
   };
@@ -227,12 +372,12 @@ const GalleryUploader = ({ label, value, onChange, maxImages = 6 }) => {
         <div className="flex items-center justify-between">
           <label className="flex items-center gap-1.5 text-xs font-semibold tracking-wider uppercase" style={{ color: '#8b7355' }}>
             <span style={{ color: '#c9a84c' }}>{label}</span>
-            <span className="text-xs font-normal" style={{ color: '#b8a898' }}>({value.length}/{maxImages})</span>
+            <span className="text-xs font-normal" style={{ color: '#b8a898' }}>({images.length}/{maxImages})</span>
           </label>
         </div>
         
         <div className="grid grid-cols-3 gap-2">
-          {value.map((img, index) => (
+          {images.map((img, index) => (
             <div key={index} className="relative aspect-square rounded-lg overflow-hidden group">
               <img src={img} alt={`相册 ${index + 1}`} className="w-full h-full object-cover" />
               <button onClick={() => handleRemove(index)} className="absolute top-1 right-1 w-5 h-5 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity" style={{ background: 'rgba(139,0,0,0.8)' }}>
@@ -241,7 +386,7 @@ const GalleryUploader = ({ label, value, onChange, maxImages = 6 }) => {
             </div>
           ))}
           
-          {value.length < maxImages && (
+          {images.length < maxImages && (
             <div onClick={() => inputRef.current?.click()} className="aspect-square rounded-lg cursor-pointer transition-all hover:opacity-80 flex items-center justify-center" style={{ background: 'linear-gradient(135deg, #fdf6f0 0%, #f8f0e8 100%)', border: '2px dashed #e8d5c4' }}>
               <Upload className="w-6 h-6" style={{ color: '#c9a84c' }} />
             </div>
@@ -258,7 +403,7 @@ const GalleryUploader = ({ label, value, onChange, maxImages = 6 }) => {
   );
 };
 
-const ShareModal = ({ isOpen, onClose, shareUrl, onDownloadImage }) => {
+const ShareModal = ({ isOpen, onClose, shareUrl, shareHint, onDownloadImage }) => {
   const [copied, setCopied] = useState(false);
   const [activeTab, setActiveTab] = useState<'link' | 'qr'>('link');
 
@@ -299,6 +444,11 @@ const ShareModal = ({ isOpen, onClose, shareUrl, onDownloadImage }) => {
 
         {activeTab === 'link' ? (
           <div className="space-y-3">
+            {shareHint && (
+              <div className="rounded-xl px-4 py-3 text-xs leading-relaxed" style={{ background: '#fff7ed', border: '1px solid #fed7aa', color: '#9a3412' }}>
+                {shareHint}
+              </div>
+            )}
             <button onClick={() => handleCopy(shareUrl)} className="w-full flex items-center gap-3 p-4 rounded-xl transition-all hover:bg-gray-50" style={{ background: '#fdf6f0', border: '1px solid #f0d8c8' }}>
               <div className="w-10 h-10 rounded-full flex items-center justify-center" style={{ background: '#c9a84c' }}>
                 {copied ? <Check className="w-5 h-5 text-white" /> : <Link className="w-5 h-5 text-white" />}
@@ -424,6 +574,86 @@ const PageModuleRenderer = ({ page, defaultFont, themeColor }) => {
   );
 };
 
+const StickerLayer = ({
+  stickers,
+  editable = false,
+  selectedStickerId,
+  containerRef,
+  onSelectSticker,
+  onMoveSticker
+}: {
+  stickers: StickerItem[];
+  editable?: boolean;
+  selectedStickerId?: string | null;
+  containerRef?: React.RefObject<HTMLDivElement | null>;
+  onSelectSticker?: (stickerId: string) => void;
+  onMoveSticker?: (stickerId: string, x: number, y: number) => void;
+}) => {
+  const handlePointerDown = (event: React.PointerEvent<HTMLButtonElement>, stickerId: string) => {
+    if (!editable || !containerRef?.current || !onMoveSticker) return;
+
+    event.preventDefault();
+    event.stopPropagation();
+    onSelectSticker?.(stickerId);
+
+    const updatePosition = (clientX: number, clientY: number) => {
+      const rect = containerRef.current?.getBoundingClientRect();
+      if (!rect) return;
+      const nextX = clamp(((clientX - rect.left) / rect.width) * 100, 5, 95);
+      const nextY = clamp(((clientY - rect.top) / rect.height) * 100, 5, 95);
+      onMoveSticker(stickerId, nextX, nextY);
+    };
+
+    updatePosition(event.clientX, event.clientY);
+
+    const handleMove = (moveEvent: PointerEvent) => {
+      updatePosition(moveEvent.clientX, moveEvent.clientY);
+    };
+
+    const handleUp = () => {
+      window.removeEventListener('pointermove', handleMove);
+      window.removeEventListener('pointerup', handleUp);
+    };
+
+    window.addEventListener('pointermove', handleMove);
+    window.addEventListener('pointerup', handleUp);
+  };
+
+  return (
+    <div className="absolute inset-0 pointer-events-none">
+      {stickers.map((sticker) => (
+        <button
+          key={sticker.id}
+          type="button"
+          onClick={(event) => {
+            if (!editable) return;
+            event.stopPropagation();
+            onSelectSticker?.(sticker.id);
+          }}
+          onPointerDown={(event) => handlePointerDown(event, sticker.id)}
+          className={`absolute flex items-center justify-center rounded-full transition-all ${editable ? 'pointer-events-auto cursor-move' : 'pointer-events-none'}`}
+          style={{
+            left: `${sticker.x}%`,
+            top: `${sticker.y}%`,
+            width: `${sticker.size + 12}px`,
+            height: `${sticker.size + 12}px`,
+            fontSize: `${sticker.size}px`,
+            lineHeight: 1,
+            transform: `translate(-50%, -50%) rotate(${sticker.rotation}deg)`,
+            background: editable && selectedStickerId === sticker.id ? 'rgba(255,255,255,0.65)' : 'transparent',
+            boxShadow: editable && selectedStickerId === sticker.id ? '0 0 0 2px rgba(196,120,138,0.35)' : 'none',
+            touchAction: 'none',
+            zIndex: 20
+          }}
+          aria-label={`贴纸-${sticker.type}`}
+        >
+          <span>{getStickerEmoji(sticker.type)}</span>
+        </button>
+      ))}
+    </div>
+  );
+};
+
 const TemplateRomantic = ({ info }) => {
   const displayGroom = info.groomName || '新郎姓名';
   const displayBride = info.brideName || '新娘姓名';
@@ -433,17 +663,18 @@ const TemplateRomantic = ({ info }) => {
   const displayBanquet = info.banquetVenue || '喜宴地点';
   const displayMsg = info.message || '愿与你共赴这一场温柔的仪式，见证我们最美好的时刻';
   const defaultFont = fonts.find(f => f.id === info.defaultFont) || fonts[0];
-  const themeColor = '#c4788a';
+  const themeColor = info.customColor || '#c4788a';
+  const accentColor = '#c9a84c';
 
   return (
     <div className="relative w-full overflow-hidden" style={{ background: 'linear-gradient(135deg, #fdf0f0 0%, #fff8f4 40%, #fdf0e8 100%)', minHeight: '700px', fontFamily: defaultFont.family }}>
       {info.coverImage && <div className="absolute inset-0"><img src={info.coverImage} alt="封面" className="w-full h-full object-cover" style={{ opacity: 0.15 }} /></div>}
       
-      <div className="absolute top-0 left-0 right-0 h-1" style={{ background: 'linear-gradient(90deg, transparent, #c4788a, #c9a84c, #c4788a, transparent)' }} />
-      <div className="absolute bottom-0 left-0 right-0 h-1" style={{ background: 'linear-gradient(90deg, transparent, #c4788a, #c9a84c, #c4788a, transparent)' }} />
+      <div className="absolute top-0 left-0 right-0 h-1" style={{ background: `linear-gradient(90deg, transparent, ${themeColor}, ${accentColor}, ${themeColor}, transparent)` }} />
+      <div className="absolute bottom-0 left-0 right-0 h-1" style={{ background: `linear-gradient(90deg, transparent, ${themeColor}, ${accentColor}, ${themeColor}, transparent)` }} />
 
       <div className="relative flex flex-col items-center px-10 py-8 text-center">
-        <p className="text-xs tracking-[0.4em] uppercase mb-2" style={{ color: '#c4788a', fontFamily: 'Playfair Display, serif' }}>Wedding Invitation</p>
+        <p className="text-xs tracking-[0.4em] uppercase mb-2" style={{ color: themeColor, fontFamily: 'Playfair Display, serif' }}>Wedding Invitation</p>
         <p className="text-sm tracking-[0.2em] mb-4" style={{ color: '#8b7355' }}>诚挚邀请您出席</p>
 
         <div className="flex items-center gap-4 mb-2">
@@ -452,8 +683,8 @@ const TemplateRomantic = ({ info }) => {
             <p className="text-xs tracking-widest mt-1" style={{ color: '#8b7355' }}>GROOM</p>
           </div>
           <div className="flex flex-col items-center mx-2">
-            <Heart className="w-7 h-7 mb-1" style={{ color: '#c4788a' }} />
-            <p className="text-xl font-bold" style={{ fontFamily: 'Playfair Display, serif', color: '#c9a84c' }}>&</p>
+            <Heart className="w-7 h-7 mb-1" style={{ color: themeColor }} />
+            <p className="text-xl font-bold" style={{ fontFamily: 'Playfair Display, serif', color: accentColor }}>&</p>
           </div>
           <div className="text-center">
             <p className="text-4xl font-bold" style={{ fontFamily: 'Dancing Script, cursive', color: '#7d2e45' }}>{displayBride}</p>
@@ -464,23 +695,23 @@ const TemplateRomantic = ({ info }) => {
         <p className="text-sm leading-relaxed mb-5 max-w-xs italic" style={{ color: '#6b4c3b' }}>"{displayMsg}"</p>
 
         <div className="w-full max-w-sm space-y-3">
-          <div className="rounded-lg p-3" style={{ background: 'rgba(196, 120, 138, 0.07)', border: '1px solid rgba(196, 120, 138, 0.2)' }}>
-            <p className="text-xs tracking-widest uppercase mb-1" style={{ color: '#c4788a' }}>婚礼日期</p>
+          <div className="rounded-lg p-3" style={{ background: `${themeColor}11`, border: `1px solid ${themeColor}33` }}>
+            <p className="text-xs tracking-widest uppercase mb-1" style={{ color: themeColor }}>婚礼日期</p>
             <p className="text-base font-semibold" style={{ color: '#2c1810', fontFamily: 'Playfair Display, serif' }}>{displayDate} · {displayTime}</p>
           </div>
-          <div className="rounded-lg p-3" style={{ background: 'rgba(201, 168, 76, 0.07)', border: '1px solid rgba(201, 168, 76, 0.2)' }}>
-            <p className="text-xs tracking-widest uppercase mb-1" style={{ color: '#c9a84c' }}>婚礼仪式</p>
-            <a href={generateMapLink(displayCeremony)} className="text-sm underline underline-offset-2 hover:opacity-80 transition-opacity" style={{ color: '#c4788a' }}>{displayCeremony}</a>
+          <div className="rounded-lg p-3" style={{ background: `${accentColor}11`, border: `1px solid ${accentColor}33` }}>
+            <p className="text-xs tracking-widest uppercase mb-1" style={{ color: accentColor }}>婚礼仪式</p>
+            <a href={generateMapLink(displayCeremony)} className="text-sm underline underline-offset-2 hover:opacity-80 transition-opacity" style={{ color: themeColor }}>{displayCeremony}</a>
           </div>
-          <div className="rounded-lg p-3" style={{ background: 'rgba(201, 168, 76, 0.07)', border: '1px solid rgba(201, 168, 76, 0.2)' }}>
-            <p className="text-xs tracking-widest uppercase mb-1" style={{ color: '#c9a84c' }}>喜宴地点</p>
-            <a href={generateMapLink(displayBanquet)} className="text-sm underline underline-offset-2 hover:opacity-80 transition-opacity" style={{ color: '#c4788a' }}>{displayBanquet}</a>
+          <div className="rounded-lg p-3" style={{ background: `${accentColor}11`, border: `1px solid ${accentColor}33` }}>
+            <p className="text-xs tracking-widest uppercase mb-1" style={{ color: accentColor }}>喜宴地点</p>
+            <a href={generateMapLink(displayBanquet)} className="text-sm underline underline-offset-2 hover:opacity-80 transition-opacity" style={{ color: themeColor }}>{displayBanquet}</a>
           </div>
         </div>
 
         {info.galleryImages?.length > 0 && (
           <div className="w-full max-w-sm mt-4">
-            <p className="text-xs tracking-widest uppercase mb-2" style={{ color: '#c4788a' }}>甜蜜瞬间</p>
+            <p className="text-xs tracking-widest uppercase mb-2" style={{ color: themeColor }}>甜蜜瞬间</p>
             <div className="grid grid-cols-3 gap-2">
               {info.galleryImages.slice(0, 3).map((img, i) => (
                 <div key={i} className="aspect-square rounded-lg overflow-hidden"><img src={img} alt={`相册 ${i + 1}`} className="w-full h-full object-cover" /></div>
@@ -508,42 +739,43 @@ const TemplateClassic = ({ info }) => {
   const displayBanquet = info.banquetVenue || '喜宴地点';
   const displayMsg = info.message || '愿与你共赴这一场温柔的仪式，见证我们最美好的时刻';
   const defaultFont = fonts.find(f => f.id === info.defaultFont) || fonts[0];
-  const themeColor = '#c9a84c';
+  const themeColor = info.customColor || '#c9a84c';
+  const lightColor = '#f0d080';
 
   return (
     <div className="relative w-full overflow-hidden" style={{ background: '#1a0a00', minHeight: '700px', fontFamily: defaultFont.family }}>
       {info.coverImage && <div className="absolute inset-0"><img src={info.coverImage} alt="封面" className="w-full h-full object-cover" style={{ opacity: 0.2 }} /></div>}
       
-      <div className="absolute inset-3" style={{ border: '1px solid rgba(201,168,76,0.5)' }} />
-      <div className="absolute inset-5" style={{ border: '1px solid rgba(201,168,76,0.25)' }} />
+      <div className="absolute inset-3" style={{ border: `1px solid ${themeColor}80` }} />
+      <div className="absolute inset-5" style={{ border: `1px solid ${themeColor}40` }} />
 
       <div className="relative flex flex-col items-center px-12 py-8 text-center">
-        <p className="text-xs tracking-[0.5em] uppercase mb-4" style={{ color: '#c9a84c', fontFamily: 'Playfair Display, serif' }}>— Wedding Invitation —</p>
-        <p className="text-2xl mb-2 tracking-[0.3em]" style={{ color: '#f0d080', fontFamily: 'serif' }}>婚 礼 请 帖</p>
+        <p className="text-xs tracking-[0.5em] uppercase mb-4" style={{ color: themeColor, fontFamily: 'Playfair Display, serif' }}>— Wedding Invitation —</p>
+        <p className="text-2xl mb-2 tracking-[0.3em]" style={{ color: lightColor, fontFamily: 'serif' }}>婚 礼 请 帖</p>
 
-        <div className="w-24 my-3" style={{ height: '1px', background: 'linear-gradient(90deg, transparent, #c9a84c, transparent)' }} />
+        <div className="w-24 my-3" style={{ height: '1px', background: `linear-gradient(90deg, transparent, ${themeColor}, transparent)` }} />
 
         <div className="my-3">
           <div className="flex items-baseline justify-center gap-3">
-            <p className="text-5xl" style={{ fontFamily: 'Dancing Script, cursive', color: '#f0d080' }}>{displayGroom}</p>
-            <p className="text-2xl" style={{ color: '#c9a84c' }}>&</p>
-            <p className="text-5xl" style={{ fontFamily: 'Dancing Script, cursive', color: '#f0d080' }}>{displayBride}</p>
+            <p className="text-5xl" style={{ fontFamily: 'Dancing Script, cursive', color: lightColor }}>{displayGroom}</p>
+            <p className="text-2xl" style={{ color: themeColor }}>&</p>
+            <p className="text-5xl" style={{ fontFamily: 'Dancing Script, cursive', color: lightColor }}>{displayBride}</p>
           </div>
           <p className="text-xs tracking-widest mt-2" style={{ color: '#8b6c3a' }}>THE WEDDING OF</p>
         </div>
 
-        <div className="my-3 px-6 py-3 rounded" style={{ border: '1px solid rgba(201,168,76,0.4)', background: 'rgba(201,168,76,0.08)' }}>
-          <p className="text-xl font-bold tracking-wider" style={{ color: '#f0d080', fontFamily: 'Playfair Display, serif' }}>{displayDate}</p>
-          <p className="text-sm mt-1" style={{ color: '#c9a84c' }}>{displayTime}</p>
+        <div className="my-3 px-6 py-3 rounded" style={{ border: `1px solid ${themeColor}60`, background: `${themeColor}14` }}>
+          <p className="text-xl font-bold tracking-wider" style={{ color: lightColor, fontFamily: 'Playfair Display, serif' }}>{displayDate}</p>
+          <p className="text-sm mt-1" style={{ color: themeColor }}>{displayTime}</p>
         </div>
 
         <p className="text-sm leading-relaxed my-3 max-w-xs italic" style={{ color: '#c4a882' }}>"{displayMsg}"</p>
 
         <div className="w-full max-w-xs space-y-2 mt-2">
           {[{ label: '仪式地点', value: displayCeremony, isAddress: true }, { label: '喜宴地点', value: displayBanquet, isAddress: true }].map((item, i) => (
-            <div key={i} className="flex items-start gap-3 text-left py-2" style={{ borderBottom: '1px solid rgba(201,168,76,0.15)' }}>
-              <p className="text-xs tracking-wider whitespace-nowrap mt-0.5" style={{ color: '#c9a84c', minWidth: '56px' }}>{item.label}</p>
-              <a href={generateMapLink(item.value)} className="text-xs leading-relaxed underline underline-offset-2 hover:opacity-80 transition-opacity" style={{ color: '#f0d080' }}>{item.value}</a>
+            <div key={i} className="flex items-start gap-3 text-left py-2" style={{ borderBottom: `1px solid ${themeColor}25` }}>
+              <p className="text-xs tracking-wider whitespace-nowrap mt-0.5" style={{ color: themeColor, minWidth: '56px' }}>{item.label}</p>
+              <a href={generateMapLink(item.value)} className="text-xs leading-relaxed underline underline-offset-2 hover:opacity-80 transition-opacity" style={{ color: lightColor }}>{item.value}</a>
             </div>
           ))}
         </div>
@@ -575,35 +807,36 @@ const TemplateModern = ({ info }) => {
   const displayBanquet = info.banquetVenue || '喜宴地点';
   const displayMsg = info.message || '愿与你共赴这一场温柔的仪式，见证我们最美好的时刻';
   const defaultFont = fonts.find(f => f.id === info.defaultFont) || fonts[0];
-  const themeColor = '#8aab8a';
+  const themeColor = info.customColor || '#8aab8a';
+  const accentColor = info.customColor || '#c4788a';
 
   return (
     <div className="relative w-full overflow-hidden" style={{ background: '#f8f5f0', minHeight: '700px', fontFamily: defaultFont.family }}>
       {info.coverImage && <div className="absolute inset-0"><img src={info.coverImage} alt="封面" className="w-full h-full object-cover" style={{ opacity: 0.1 }} /></div>}
       
-      <div className="absolute left-0 top-0 bottom-0 w-2" style={{ background: 'linear-gradient(180deg, #8aab8a, #c4788a, #c9a84c)' }} />
+      <div className="absolute left-0 top-0 bottom-0 w-2" style={{ background: `linear-gradient(180deg, ${themeColor}, ${accentColor}, #c9a84c)` }} />
 
       <div className="relative flex flex-col pl-12 pr-8 py-10">
-        <p className="text-xs tracking-[0.4em] uppercase mb-6" style={{ color: '#8aab8a', fontFamily: 'Playfair Display, serif' }}>Wedding Invitation</p>
+        <p className="text-xs tracking-[0.4em] uppercase mb-6" style={{ color: themeColor, fontFamily: 'Playfair Display, serif' }}>Wedding Invitation</p>
 
         <div className="mb-4">
           <p className="text-6xl leading-tight" style={{ fontFamily: 'Dancing Script, cursive', color: '#2c1810' }}>{displayGroom}</p>
-          <p className="text-2xl my-1 tracking-widest" style={{ color: '#c4788a' }}>& — & —</p>
+          <p className="text-2xl my-1 tracking-widest" style={{ color: accentColor }}>& — & —</p>
           <p className="text-6xl leading-tight" style={{ fontFamily: 'Dancing Script, cursive', color: '#2c1810' }}>{displayBride}</p>
         </div>
 
-        <div className="w-full my-4" style={{ height: '1px', background: 'linear-gradient(90deg, #c4788a, transparent)' }} />
+        <div className="w-full my-4" style={{ height: '1px', background: `linear-gradient(90deg, ${accentColor}, transparent)` }} />
 
         <p className="text-sm leading-relaxed italic mb-5" style={{ color: '#6b4c3b', maxWidth: '280px' }}>"{displayMsg}"</p>
 
         <div className="space-y-3">
           {[{ icon: '📅', label: '日期与时间', value: `${displayDate} ${displayTime}`, isAddress: false }, { icon: '💒', label: '婚礼仪式', value: displayCeremony, isAddress: true }, { icon: '🍽', label: '喜宴地点', value: displayBanquet, isAddress: true }].map((item, i) => (
             <div key={i} className="flex gap-3 items-start">
-              <div className="w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 text-sm" style={{ background: 'rgba(196, 120, 138, 0.1)' }}>{item.icon}</div>
+              <div className="w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 text-sm" style={{ background: `${accentColor}10` }}>{item.icon}</div>
               <div>
-                <p className="text-xs tracking-wider uppercase" style={{ color: '#c4788a', marginBottom: '1px' }}>{item.label}</p>
+                <p className="text-xs tracking-wider uppercase" style={{ color: accentColor, marginBottom: '1px' }}>{item.label}</p>
                 {item.isAddress ? (
-                  <a href={generateMapLink(item.value)} className="text-xs underline underline-offset-2 hover:opacity-80 transition-opacity" style={{ color: '#c4788a', lineHeight: 1.5 }}>{item.value}</a>
+                  <a href={generateMapLink(item.value)} className="text-xs underline underline-offset-2 hover:opacity-80 transition-opacity" style={{ color: accentColor, lineHeight: 1.5 }}>{item.value}</a>
                 ) : (
                   <p className="text-xs" style={{ color: '#2c1810', lineHeight: 1.5 }}>{item.value}</p>
                 )}
@@ -625,7 +858,7 @@ const TemplateModern = ({ info }) => {
         ))}
 
         <div className="mt-6 inline-flex items-center gap-2">
-          <Heart className="w-4 h-4" style={{ color: '#c4788a' }} />
+          <Heart className="w-4 h-4" style={{ color: accentColor }} />
           <p className="text-xs tracking-widest" style={{ color: '#b8a898' }}>Forever begins today</p>
         </div>
       </div>
@@ -642,52 +875,52 @@ const TemplateChinese = ({ info }) => {
   const displayBanquet = info.banquetVenue || '喜宴地点';
   const displayMsg = info.message || '愿与你共赴这一场温柔的仪式，见证我们最美好的时刻';
   const defaultFont = fonts.find(f => f.id === info.defaultFont) || fonts[0];
-  const themeColor = '#ffd700';
+  const themeColor = info.customColor || '#ffd700';
 
   return (
     <div className="relative w-full overflow-hidden" style={{ background: 'linear-gradient(160deg, #8b0000 0%, #6b0000 50%, #4a0000 100%)', minHeight: '700px', fontFamily: defaultFont.family }}>
       {info.coverImage && <div className="absolute inset-0"><img src={info.coverImage} alt="封面" className="w-full h-full object-cover" style={{ opacity: 0.15 }} /></div>}
       
-      <div className="absolute inset-4" style={{ border: '2px solid rgba(255,215,0,0.4)', borderRadius: '4px' }} />
-      <div className="absolute inset-6" style={{ border: '1px solid rgba(255,215,0,0.2)', borderRadius: '2px' }} />
+      <div className="absolute inset-4" style={{ border: `2px solid ${themeColor}66`, borderRadius: '4px' }} />
+      <div className="absolute inset-6" style={{ border: `1px solid ${themeColor}33`, borderRadius: '2px' }} />
 
-      <div className="absolute top-8 left-8 text-5xl opacity-20" style={{ color: '#ffd700' }}>囍</div>
-      <div className="absolute top-8 right-8 text-5xl opacity-20" style={{ color: '#ffd700' }}>囍</div>
+      <div className="absolute top-8 left-8 text-5xl opacity-20" style={{ color: themeColor }}>囍</div>
+      <div className="absolute top-8 right-8 text-5xl opacity-20" style={{ color: themeColor }}>囍</div>
 
       <div className="relative flex flex-col items-center px-10 py-8 text-center">
         <div className="mb-2">
-          <p className="text-3xl tracking-[0.5em] font-bold" style={{ color: '#ffd700', fontFamily: 'serif' }}>喜</p>
-          <p className="text-xs tracking-[0.4em] mt-1" style={{ color: 'rgba(255,215,0,0.7)' }}>— 婚 礼 请 帖 —</p>
+          <p className="text-3xl tracking-[0.5em] font-bold" style={{ color: themeColor, fontFamily: 'serif' }}>喜</p>
+          <p className="text-xs tracking-[0.4em] mt-1" style={{ color: `${themeColor}aa` }}>— 婚 礼 请 帖 —</p>
         </div>
 
-        <div className="w-40 my-3" style={{ height: '1px', background: 'linear-gradient(90deg, transparent, #ffd700, transparent)' }} />
+        <div className="w-40 my-3" style={{ height: '1px', background: `linear-gradient(90deg, transparent, ${themeColor}, transparent)` }} />
 
         <div className="flex items-center justify-center gap-3 my-2">
           <div className="text-center">
-            <p className="text-3xl font-bold tracking-widest" style={{ color: '#ffd700', fontFamily: 'serif' }}>{displayGroom}</p>
-            <p className="text-xs mt-1" style={{ color: 'rgba(255,215,0,0.6)' }}>新 郎</p>
+            <p className="text-3xl font-bold tracking-widest" style={{ color: themeColor, fontFamily: 'serif' }}>{displayGroom}</p>
+            <p className="text-xs mt-1" style={{ color: `${themeColor}99` }}>新 郎</p>
           </div>
-          <div className="text-4xl mx-2 font-bold" style={{ color: '#ffd700' }}>❤</div>
+          <div className="text-4xl mx-2 font-bold" style={{ color: themeColor }}>❤</div>
           <div className="text-center">
-            <p className="text-3xl font-bold tracking-widest" style={{ color: '#ffd700', fontFamily: 'serif' }}>{displayBride}</p>
-            <p className="text-xs mt-1" style={{ color: 'rgba(255,215,0,0.6)' }}>新 娘</p>
+            <p className="text-3xl font-bold tracking-widest" style={{ color: themeColor, fontFamily: 'serif' }}>{displayBride}</p>
+            <p className="text-xs mt-1" style={{ color: `${themeColor}99` }}>新 娘</p>
           </div>
         </div>
 
-        <div className="w-40 my-3" style={{ height: '1px', background: 'linear-gradient(90deg, transparent, #ffd700, transparent)' }} />
+        <div className="w-40 my-3" style={{ height: '1px', background: `linear-gradient(90deg, transparent, ${themeColor}, transparent)` }} />
 
-        <p className="text-sm leading-loose my-2 tracking-wider max-w-xs" style={{ color: 'rgba(255,215,0,0.85)' }}>{displayMsg}</p>
+        <p className="text-sm leading-loose my-2 tracking-wider max-w-xs" style={{ color: `${themeColor}dd` }}>{displayMsg}</p>
 
-        <p className="text-2xl my-2 tracking-widest opacity-60" style={{ color: '#ffd700' }}>✿ ✿ ✿</p>
+        <p className="text-2xl my-2 tracking-widest opacity-60" style={{ color: themeColor }}>✿ ✿ ✿</p>
 
         <div className="w-full max-w-xs mt-2 space-y-2">
           {[{ label: '吉日', value: `${displayDate}  ${displayTime}`, isAddress: false }, { label: '仪式', value: displayCeremony, isAddress: true }, { label: '喜宴', value: displayBanquet, isAddress: true }].map((item, i) => (
-            <div key={i} className="flex items-center gap-2" style={{ borderBottom: '1px solid rgba(255,215,0,0.15)', paddingBottom: '6px' }}>
-              <span className="text-sm font-bold tracking-widest" style={{ color: '#ffd700', minWidth: '28px' }}>{item.label}</span>
+            <div key={i} className="flex items-center gap-2" style={{ borderBottom: `1px solid ${themeColor}25`, paddingBottom: '6px' }}>
+              <span className="text-sm font-bold tracking-widest" style={{ color: themeColor, minWidth: '28px' }}>{item.label}</span>
               {item.isAddress ? (
-                <a href={generateMapLink(item.value)} className="text-sm underline underline-offset-2 hover:opacity-80 transition-opacity" style={{ color: '#ffd700', lineHeight: 1.6 }}>{item.value}</a>
+                <a href={generateMapLink(item.value)} className="text-sm underline underline-offset-2 hover:opacity-80 transition-opacity" style={{ color: themeColor, lineHeight: 1.6 }}>{item.value}</a>
               ) : (
-                <span className="text-sm" style={{ color: 'rgba(255,215,0,0.8)', lineHeight: 1.6 }}>{item.value}</span>
+                <span className="text-sm" style={{ color: `${themeColor}cc`, lineHeight: 1.6 }}>{item.value}</span>
               )}
             </div>
           ))}
@@ -696,7 +929,7 @@ const TemplateChinese = ({ info }) => {
         {info.galleryImages?.length > 0 && (
           <div className="flex gap-2 mt-4 justify-center">
             {info.galleryImages.slice(0, 3).map((img, i) => (
-              <div key={i} className="w-16 h-16 rounded-lg overflow-hidden border border-gold-400"><img src={img} alt={`相册 ${i + 1}`} className="w-full h-full object-cover" /></div>
+              <div key={i} className="w-16 h-16 rounded-lg overflow-hidden" style={{ border: `2px solid ${themeColor}66` }}><img src={img} alt={`相册 ${i + 1}`} className="w-full h-full object-cover" /></div>
             ))}
           </div>
         )}
@@ -705,7 +938,77 @@ const TemplateChinese = ({ info }) => {
           <PageModuleRenderer key={page.id} page={page} defaultFont={info.defaultFont} themeColor={themeColor} />
         ))}
 
-        <p className="mt-6 text-xs tracking-widest" style={{ color: 'rgba(255,215,0,0.4)' }}>百年好合 · 永结同心</p>
+        <p className="mt-6 text-xs tracking-widest" style={{ color: `${themeColor}66` }}>百年好合 · 永结同心</p>
+      </div>
+    </div>
+  );
+};
+
+const TemplateKorean = ({ info }) => {
+  const displayGroom = info.groomName || '新郎姓名';
+  const displayBride = info.brideName || '新娘姓名';
+  const displayDate = info.weddingDate ? new Date(info.weddingDate).toLocaleDateString('zh-CN', { year: 'numeric', month: 'long', day: 'numeric' }) : '2025年6月15日';
+  const displayTime = info.weddingTime || '11:00';
+  const displayCeremony = info.ceremonyVenue || '婚礼仪式地点';
+  const displayBanquet = info.banquetVenue || '喜宴地点';
+  const displayMsg = info.message || '愿温柔的时光停留在这一天，诚挚邀请您见证我们的幸福。';
+  const defaultFont = fonts.find(f => f.id === info.defaultFont) || fonts[0];
+  const themeColor = info.customColor || '#b8a79a';
+  const accentColor = '#e9ddd2';
+  const textColor = '#5f534b';
+
+  return (
+    <div className="relative w-full overflow-hidden" style={{ background: 'linear-gradient(180deg, #f7f2ed 0%, #fdfaf7 55%, #f4ede6 100%)', minHeight: '700px', fontFamily: defaultFont.family }}>
+      {info.coverImage && <div className="absolute inset-0"><img src={info.coverImage} alt="封面" className="w-full h-full object-cover" style={{ opacity: 0.08, filter: 'blur(2px)' }} /></div>}
+
+      <div className="absolute top-6 left-6 right-6 bottom-6 rounded-[32px]" style={{ border: `1px solid ${themeColor}40`, background: 'rgba(255,255,255,0.35)' }} />
+
+      <div className="relative flex flex-col items-center px-10 py-10 text-center">
+        <p className="text-[10px] tracking-[0.45em] uppercase" style={{ color: themeColor, fontFamily: 'Playfair Display, serif' }}>Wedding Day</p>
+        <div className="w-12 h-12 rounded-full flex items-center justify-center mt-4 mb-5" style={{ background: `${accentColor}dd`, color: themeColor }}>
+          <Heart className="w-5 h-5" />
+        </div>
+
+        <p className="text-5xl leading-none" style={{ color: textColor, fontFamily: 'Dancing Script, cursive' }}>{displayGroom}</p>
+        <p className="text-sm my-2" style={{ color: '#cdb8aa' }}>&</p>
+        <p className="text-5xl leading-none" style={{ color: textColor, fontFamily: 'Dancing Script, cursive' }}>{displayBride}</p>
+
+        <div className="mt-6 mb-5 px-5 py-4 rounded-[24px] w-full max-w-sm" style={{ background: 'rgba(255,255,255,0.7)', border: `1px solid ${accentColor}` }}>
+          <p className="text-xs tracking-[0.3em] uppercase mb-2" style={{ color: themeColor }}>Save The Date</p>
+          <p className="text-lg" style={{ color: '#4d433d', fontFamily: 'Playfair Display, serif' }}>{displayDate}</p>
+          <p className="text-sm mt-1" style={{ color: textColor }}>{displayTime}</p>
+        </div>
+
+        <p className="text-sm leading-7 max-w-xs mb-6" style={{ color: textColor }}>{displayMsg}</p>
+
+        <div className="w-full max-w-sm space-y-3">
+          <div className="rounded-[22px] px-5 py-4 text-left" style={{ background: 'rgba(255,255,255,0.72)', border: `1px solid ${accentColor}` }}>
+            <p className="text-[10px] tracking-[0.3em] uppercase mb-2" style={{ color: themeColor }}>Ceremony</p>
+            <a href={generateMapLink(displayCeremony)} className="text-sm underline underline-offset-2 hover:opacity-80 transition-opacity" style={{ color: textColor }}>{displayCeremony}</a>
+          </div>
+          <div className="rounded-[22px] px-5 py-4 text-left" style={{ background: 'rgba(255,255,255,0.72)', border: `1px solid ${accentColor}` }}>
+            <p className="text-[10px] tracking-[0.3em] uppercase mb-2" style={{ color: themeColor }}>Reception</p>
+            <a href={generateMapLink(displayBanquet)} className="text-sm underline underline-offset-2 hover:opacity-80 transition-opacity" style={{ color: textColor }}>{displayBanquet}</a>
+          </div>
+        </div>
+
+        {info.galleryImages?.length > 0 && (
+          <div className="w-full max-w-sm mt-5">
+            <div className="grid grid-cols-3 gap-2">
+              {info.galleryImages.slice(0, 3).map((img, i) => (
+                <div key={i} className="aspect-[3/4] rounded-[18px] overflow-hidden shadow-sm">
+                  <img src={img} alt={`相册 ${i + 1}`} className="w-full h-full object-cover" />
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {info.pages?.map(page => (
+          <PageModuleRenderer key={page.id} page={page} defaultFont={info.defaultFont} themeColor={themeColor} />
+        ))}
+
+        <p className="mt-6 text-[11px] tracking-[0.25em] uppercase" style={{ color: '#c3b1a4' }}>With Love And Gratitude</p>
       </div>
     </div>
   );
@@ -715,7 +1018,8 @@ const templates = [
   { id: 'romantic', name: '浪漫玫瑰', subtitle: 'Rose Romance', color: '#c4788a' },
   { id: 'classic', name: '经典烫金', subtitle: 'Classic Gold', color: '#c9a84c' },
   { id: 'modern', name: '现代简约', subtitle: 'Modern Minimal', color: '#8aab8a' },
-  { id: 'chinese', name: '中式喜红', subtitle: 'Chinese Red', color: '#8b0000' }
+  { id: 'chinese', name: '中式喜红', subtitle: 'Chinese Red', color: '#8b0000' },
+  { id: 'korean', name: '韩式奶油', subtitle: 'Korean Mood', color: '#b8a79a' }
 ];
 
 const FormField = ({ label, icon, children }) => (
@@ -729,35 +1033,22 @@ const FormField = ({ label, icon, children }) => (
 );
 
 const WeddingInvitationGenerator = () => {
-  const [info, setInfo] = useState<WeddingInfo>({
-    groomName: '', 
-    brideName: '', 
-    weddingDate: '', 
-    weddingTime: '', 
-    ceremonyVenue: '', 
-    banquetVenue: '', 
-    ceremonyLat: 0,
-    ceremonyLng: 0,
-    banquetLat: 0,
-    banquetLng: 0,
-    message: '', 
-    coverImage: '', 
-    galleryImages: [],
-    pages: [],
-    defaultFont: 'cormorant',
-    bgMusic: '',
-    bgMusicName: '',
-    petalsEnabled: true
-  });
-  const [activeTemplate, setActiveTemplate] = useState('romantic');
+  const [info, setInfo] = useState<WeddingInfo>(() => loadDraftFromStorage());
+  const [activeTemplate, setActiveTemplate] = useState(() => loadTemplateFromStorage());
   const [showShareModal, setShowShareModal] = useState(false);
   const [shareUrl, setShareUrl] = useState('');
+  const [shareHint, setShareHint] = useState('');
   const [isSaved, setIsSaved] = useState(false);
-  const [expandedSections, setExpandedSections] = useState({ basic: true, pages: false, appearance: true });
+  const [expandedSections, setExpandedSections] = useState({ basic: true, pages: false, appearance: true, stickers: true });
   const [editingPage, setEditingPage] = useState<string | null>(null);
+  const [selectedStickerId, setSelectedStickerId] = useState<string | null>(null);
   const [mobileView, setMobileView] = useState<'edit' | 'preview'>('edit');
   const [isMobile, setIsMobile] = useState(false);
-  const previewRef = useRef(null);
+  const previewRef = useRef<HTMLDivElement | null>(null);
+  const musicInputRef = useRef<HTMLInputElement | null>(null);
+  const pageIdRef = useRef(info.pages.length);
+  const stickerIdRef = useRef(info.stickers.length);
+  const loadedDraftRef = useRef(hasStoredDraft());
 
   useEffect(() => {
     const checkMobile = () => {
@@ -769,17 +1060,9 @@ const WeddingInvitationGenerator = () => {
   }, []);
 
   useEffect(() => {
-    const draft = localStorage.getItem('wedding_draft');
-    if (draft) {
-      try {
-        const savedInfo = JSON.parse(draft);
-        setInfo(savedInfo);
-        toast.info('已加载上次保存的草稿');
-      } catch (e) { console.error('Failed to load draft:', e); }
+    if (loadedDraftRef.current) {
+      toast.info('已加载上次保存的草稿');
     }
-
-    const savedTemplate = localStorage.getItem('wedding_template');
-    if (savedTemplate) setActiveTemplate(savedTemplate);
   }, []);
 
   useEffect(() => {
@@ -796,9 +1079,47 @@ const WeddingInvitationGenerator = () => {
     setInfo(prev => ({ ...prev, [field]: value }));
   };
 
+  const addSticker = (type: StickerType) => {
+    stickerIdRef.current += 1;
+    const offset = info.stickers.length % 4;
+    const newSticker: StickerItem = {
+      id: `sticker_${stickerIdRef.current}`,
+      type,
+      x: 20 + offset * 18,
+      y: 18 + offset * 12,
+      size: 34,
+      rotation: 0
+    };
+    setInfo(prev => ({ ...prev, stickers: [...prev.stickers, newSticker] }));
+    setSelectedStickerId(newSticker.id);
+    toast.success('已添加贴纸，可直接拖动调整位置');
+  };
+
+  const updateSticker = (stickerId: string, updates: Partial<StickerItem>) => {
+    setInfo(prev => ({
+      ...prev,
+      stickers: prev.stickers.map(sticker =>
+        sticker.id === stickerId ? { ...sticker, ...updates } : sticker
+      )
+    }));
+  };
+
+  const moveSticker = (stickerId: string, x: number, y: number) => {
+    updateSticker(stickerId, { x, y });
+  };
+
+  const deleteSticker = (stickerId: string) => {
+    setInfo(prev => ({
+      ...prev,
+      stickers: prev.stickers.filter(sticker => sticker.id !== stickerId)
+    }));
+    setSelectedStickerId(prev => (prev === stickerId ? null : prev));
+  };
+
   const addPage = (type: string) => {
+    pageIdRef.current += 1;
     const newPage: PageModule = {
-      id: `page_${Date.now()}`,
+      id: `page_${pageIdRef.current}`,
       type: type as PageModule['type'],
       title: pageTypes.find(t => t.id === type)?.name || '新页面',
       content: '',
@@ -838,25 +1159,36 @@ const WeddingInvitationGenerator = () => {
     setInfo(prev => ({ ...prev, pages: newPages }));
   };
 
-  const toggleSection = (section: string) => {
+  const toggleSection = (section: keyof typeof expandedSections) => {
     setExpandedSections(prev => ({ ...prev, [section]: !prev[section] }));
   };
 
   const generateShareUrl = useCallback(() => {
     try {
-      const configData = { ...info, template: activeTemplate };
-      const encoded = btoa(encodeURIComponent(JSON.stringify(configData)));
-      return `${window.location.origin}/#/preview?config=${encoded}`;
+      const payload = buildSharePayload(info, activeTemplate);
+      const configUrl = buildConfigShareUrl(payload);
+
+      if (configUrl.length <= MAX_SHARE_URL_LENGTH) {
+        return { url: configUrl, hint: '' };
+      }
+
+      const shortUrl = buildShortShareUrl(payload);
+      return {
+        url: shortUrl,
+        hint: '当前请帖包含较大的本地图片或音频资源，已改用当前浏览器短码保存。该链接在本机可打开；如需跨设备稳定分享，需要接入云端存储。'
+      };
     } catch (error) {
       console.error('Failed to generate share URL:', error);
-      toast.error('生成分享链接失败');
-      return '';
+      toast.error('生成分享链接失败，请减少图片或音乐大小后重试');
+      return null;
     }
   }, [info, activeTemplate]);
 
   const handleShare = () => {
-    const fullUrl = generateShareUrl();
-    setShareUrl(fullUrl);
+    const shareData = generateShareUrl();
+    if (!shareData) return;
+    setShareUrl(shareData.url);
+    setShareHint(shareData.hint);
     setShowShareModal(true);
   };
 
@@ -885,26 +1217,7 @@ const WeddingInvitationGenerator = () => {
 
   const handleReset = () => {
     if (confirm('确定要重置所有内容吗？')) {
-      setInfo({ 
-        groomName: '', 
-        brideName: '', 
-        weddingDate: '', 
-        weddingTime: '', 
-        ceremonyVenue: '', 
-        banquetVenue: '', 
-        ceremonyLat: 0,
-        ceremonyLng: 0,
-        banquetLat: 0,
-        banquetLng: 0,
-        message: '', 
-        coverImage: '', 
-        galleryImages: [],
-        pages: [],
-        defaultFont: 'cormorant',
-        bgMusic: '',
-        bgMusicName: '',
-        petalsEnabled: true
-      });
+      setInfo(cloneDefaultWeddingInfo());
       localStorage.removeItem('wedding_draft');
       toast.info('已重置所有内容');
     }
@@ -912,8 +1225,9 @@ const WeddingInvitationGenerator = () => {
 
   const [showMapModal, setShowMapModal] = useState(false);
   const [mapSearchType, setMapSearchType] = useState<'ceremony' | 'banquet'>('ceremony');
-  const [mapSearchResults, setMapSearchResults] = useState<any[]>([]);
+  const [mapSearchResults, setMapSearchResults] = useState<AmapPoi[]>([]);
   const [mapSearchQuery, setMapSearchQuery] = useState('');
+  const selectedSticker = info.stickers.find(sticker => sticker.id === selectedStickerId) || null;
 
   const handleMapSearch = (type: 'ceremony' | 'banquet') => {
     setMapSearchType(type);
@@ -926,7 +1240,7 @@ const WeddingInvitationGenerator = () => {
     
     try {
       const response = await fetch(`https://restapi.amap.com/v3/place/text?keywords=${encodeURIComponent(mapSearchQuery)}&city=&output=json&key=cb6fb68b9184a02858f8059867959185`);
-      const data = await response.json();
+      const data = await response.json() as AmapSearchResponse;
       if (data.pois && data.pois.length > 0) {
         setMapSearchResults(data.pois);
       } else {
@@ -939,10 +1253,10 @@ const WeddingInvitationGenerator = () => {
     }
   };
 
-  const selectAddress = (address: any) => {
+  const selectAddress = (address: AmapPoi) => {
     const name = address.name || address.formatted_address || address.address;
     const location = address.location || '';
-    const [lng, lat] = location.split(',').map(Number) || [0, 0];
+    const [lng = 0, lat = 0] = location.split(',').map(Number);
     
     if (mapSearchType === 'ceremony') {
       updateField('ceremonyVenue', name);
@@ -960,11 +1274,25 @@ const WeddingInvitationGenerator = () => {
 
   const renderTemplate = () => {
     const props = { info };
-    if (activeTemplate === 'romantic') return <TemplateRomantic {...props} />;
-    if (activeTemplate === 'classic') return <TemplateClassic {...props} />;
-    if (activeTemplate === 'modern') return <TemplateModern {...props} />;
-    if (activeTemplate === 'chinese') return <TemplateChinese {...props} />;
-    return <TemplateRomantic {...props} />;
+    let templateNode = <TemplateRomantic {...props} />;
+    if (activeTemplate === 'classic') templateNode = <TemplateClassic {...props} />;
+    if (activeTemplate === 'modern') templateNode = <TemplateModern {...props} />;
+    if (activeTemplate === 'chinese') templateNode = <TemplateChinese {...props} />;
+    if (activeTemplate === 'korean') templateNode = <TemplateKorean {...props} />;
+
+    return (
+      <>
+        {templateNode}
+        <StickerLayer
+          stickers={info.stickers}
+          editable
+          selectedStickerId={selectedStickerId}
+          containerRef={previewRef}
+          onSelectSticker={setSelectedStickerId}
+          onMoveSticker={moveSticker}
+        />
+      </>
+    );
   };
 
   return (
@@ -1071,15 +1399,15 @@ const WeddingInvitationGenerator = () => {
                 <div className="flex items-center gap-2">
                   <Layout className="w-4 h-4" style={{ color: '#c9a84c' }} />
                   <span className="text-sm font-medium" style={{ color: '#2c1810' }}>自定义页面</span>
-                  {info.pages.length > 0 && (
-                    <span className="text-xs px-2 py-0.5 rounded-full" style={{ background: '#c4788a', color: 'white' }}>{info.pages.length}</span>
+                  {info.pages?.length > 0 && (
+                    <span className="text-xs px-2 py-0.5 rounded-full" style={{ background: '#c4788a', color: 'white' }}>{info.pages?.length}</span>
                   )}
                 </div>
                 {expandedSections.pages ? <ChevronUp className="w-4 h-4" style={{ color: '#8b7355' }} /> : <ChevronDown className="w-4 h-4" style={{ color: '#8b7355' }} />}
               </button>
               {expandedSections.pages && (
                 <div className="px-3 sm:px-4 pb-3 sm:pb-4">
-                  {info.pages.length === 0 ? (
+                  {info.pages?.length === 0 ? (
                     <div className="py-4 sm:py-6 text-center" style={{ background: '#fdf6f0', borderRadius: '8px' }}>
                       <Layout className="w-8 h-8 mx-auto mb-2" style={{ color: '#c9a84c' }} />
                       <p className="text-xs" style={{ color: '#8b7355' }}>暂无自定义页面</p>
@@ -1112,8 +1440,8 @@ const WeddingInvitationGenerator = () => {
                                     const input = document.createElement('input');
                                     input.type = 'file';
                                     input.accept = 'image/*';
-                                    input.onchange = (e: any) => {
-                                      const file = e.target.files?.[0];
+                                    input.onchange = (event: Event) => {
+                                      const file = getFileFromInputEvent(event);
                                       if (file) {
                                         const reader = new FileReader();
                                         reader.onload = (event) => {
@@ -1153,8 +1481,8 @@ const WeddingInvitationGenerator = () => {
                                         const input = document.createElement('input');
                                         input.type = 'file';
                                         input.accept = 'image/*';
-                                        input.onchange = (e: any) => {
-                                          const file = e.target.files?.[0];
+                                        input.onchange = (event: Event) => {
+                                          const file = getFileFromInputEvent(event);
                                           if (file) {
                                             const reader = new FileReader();
                                             reader.onload = (event) => {
@@ -1226,7 +1554,15 @@ const WeddingInvitationGenerator = () => {
                     <label className="text-xs font-semibold mb-2 block" style={{ color: '#8b7355' }}>主题风格</label>
                     <div className="grid grid-cols-2 gap-1.5 sm:gap-2">
                       {templates.map((template) => (
-                        <button key={template.id} onClick={() => setActiveTemplate(template.id)} className={`p-2.5 sm:p-3 rounded-lg text-left transition-all ${activeTemplate === template.id ? `ring-2 ring-offset-1 ring-[${template.color}]` : ''}`} style={{ background: activeTemplate === template.id ? '#fdf6f0' : '#fff' }}>
+                        <button
+                          key={template.id}
+                          onClick={() => setActiveTemplate(template.id)}
+                          className="p-2.5 sm:p-3 rounded-lg text-left transition-all"
+                          style={{
+                            background: activeTemplate === template.id ? '#fdf6f0' : '#fff',
+                            boxShadow: activeTemplate === template.id ? `0 0 0 2px ${template.color}` : undefined
+                          }}
+                        >
                           <div className="flex items-center gap-2 mb-1">
                             <div className="w-3 h-3 rounded-full" style={{ background: template.color }} />
                             <span className="text-sm font-medium" style={{ color: '#2c1810' }}>{template.name}</span>
@@ -1238,8 +1574,48 @@ const WeddingInvitationGenerator = () => {
                   </div>
 
                   <div>
+                    <label className="text-xs font-semibold mb-2 block" style={{ color: '#8b7355' }}>自定义主题色</label>
+                    <div className="space-y-2">
+                      <div className="flex items-center gap-2">
+                        <input
+                          type="color"
+                          value={info.customColor || '#c4788a'}
+                          onChange={(e) => updateField('customColor', e.target.value)}
+                          className="w-10 h-10 rounded-lg cursor-pointer border-0 p-0"
+                          style={{ background: 'transparent' }}
+                        />
+                        <div className="flex-1 flex items-center justify-between">
+                          <span className="text-sm" style={{ color: '#2c1810' }}>
+                            {info.customColor || '点击选择颜色'}
+                          </span>
+                          {info.customColor && (
+                            <button onClick={() => updateField('customColor', '')} className="text-xs text-gray-400 hover:text-gray-600 transition-colors">
+                              清除
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                      <div className="flex flex-wrap gap-1.5">
+                        {['#c4788a', '#c9a84c', '#8aab8a', '#8b0000', '#ff69b4', '#9370db', '#00ced1', '#ff7f50'].map((color) => (
+                          <button
+                            key={color}
+                            onClick={() => updateField('customColor', color)}
+                            className={`w-7 h-7 rounded-full transition-transform hover:scale-110 ${info.customColor === color ? 'ring-2 ring-offset-1 ring-gray-400' : ''}`}
+                            style={{ background: color }}
+                            title={color}
+                          />
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div>
                     <label className="text-xs font-semibold mb-2 block" style={{ color: '#8b7355' }}>背景音乐</label>
-                    <div className={`relative rounded-lg overflow-hidden cursor-pointer transition-all hover:opacity-80 ${info.bgMusic ? 'flex items-center justify-between' : 'flex items-center justify-center'}`} style={{ background: info.bgMusic ? 'rgba(196, 120, 138, 0.07)' : 'linear-gradient(135deg, #fdf6f0 0%, #f8f0e8 100%)', border: info.bgMusic ? '1px solid rgba(196,120,138,0.3)' : '2px dashed #e8d5c4', padding: '12px 14px' }}>
+                    <div
+                      onClick={() => musicInputRef.current?.click()}
+                      className={`relative rounded-lg overflow-hidden cursor-pointer transition-all hover:opacity-80 ${info.bgMusic ? 'flex items-center justify-between' : 'flex items-center justify-center'}`}
+                      style={{ background: info.bgMusic ? 'rgba(196, 120, 138, 0.07)' : 'linear-gradient(135deg, #fdf6f0 0%, #f8f0e8 100%)', border: info.bgMusic ? '1px solid rgba(196,120,138,0.3)' : '2px dashed #e8d5c4', padding: '12px 14px' }}
+                    >
                       {info.bgMusic ? (
                         <>
                           <div className="flex items-center gap-3">
@@ -1262,11 +1638,12 @@ const WeddingInvitationGenerator = () => {
                           <span className="text-xs" style={{ color: '#8b7355' }}>点击上传背景音乐 (MP3)</span>
                         </>
                       )}
-                      <input ref={(el) => { (window as any).musicInput = el; }} type="file" accept="audio/mp3" onChange={(e) => {
+                      <input ref={musicInputRef} type="file" accept="audio/mpeg,.mp3" onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
                         const file = e.target.files?.[0];
                         if (file) {
                           if (file.size > 5 * 1024 * 1024) {
                             toast.error('文件大小不能超过 5MB');
+                            e.target.value = '';
                             return;
                           }
                           const reader = new FileReader();
@@ -1277,6 +1654,7 @@ const WeddingInvitationGenerator = () => {
                           };
                           reader.readAsDataURL(file);
                         }
+                        e.target.value = '';
                       }} className="hidden" />
                     </div>
                   </div>
@@ -1297,6 +1675,115 @@ const WeddingInvitationGenerator = () => {
               )}
             </div>
 
+            <div className="rounded-lg border overflow-hidden" style={{ borderColor: '#e8d5c4' }}>
+              <button onClick={() => toggleSection('stickers')} className="w-full flex items-center justify-between px-3 sm:px-4 py-2.5 sm:py-3" style={{ background: '#fff' }}>
+                <div className="flex items-center gap-2">
+                  <Sparkles className="w-4 h-4" style={{ color: '#c9a84c' }} />
+                  <span className="text-sm font-medium" style={{ color: '#2c1810' }}>贴纸装饰</span>
+                  {info.stickers.length > 0 && (
+                    <span className="text-xs px-2 py-0.5 rounded-full" style={{ background: '#c4788a', color: 'white' }}>{info.stickers.length}</span>
+                  )}
+                </div>
+                {expandedSections.stickers ? <ChevronUp className="w-4 h-4" style={{ color: '#8b7355' }} /> : <ChevronDown className="w-4 h-4" style={{ color: '#8b7355' }} />}
+              </button>
+              {expandedSections.stickers && (
+                <div className="px-3 sm:px-4 pb-3 sm:pb-4 space-y-3">
+                  <div>
+                    <label className="text-xs font-semibold mb-2 block" style={{ color: '#8b7355' }}>添加贴纸</label>
+                    <div className="grid grid-cols-2 gap-2">
+                      {stickerOptions.map((sticker) => (
+                        <button
+                          key={sticker.id}
+                          onClick={() => addSticker(sticker.id)}
+                          className="flex items-center gap-2 rounded-xl px-3 py-2 text-left transition-all hover:opacity-85"
+                          style={{ background: '#fdf6f0', border: '1px solid #e8d5c4' }}
+                        >
+                          <span className="text-xl leading-none">{sticker.emoji}</span>
+                          <div>
+                            <p className="text-sm font-medium" style={{ color: '#2c1810' }}>{sticker.label}</p>
+                            <p className="text-xs" style={{ color: '#8b7355' }}>点击加入请帖</p>
+                          </div>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {selectedSticker ? (
+                    <div className="rounded-xl p-3 space-y-3" style={{ background: '#fdf6f0', border: '1px solid #e8d5c4' }}>
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <span className="text-2xl">{getStickerEmoji(selectedSticker.type)}</span>
+                          <div>
+                            <p className="text-sm font-medium" style={{ color: '#2c1810' }}>当前贴纸</p>
+                            <p className="text-xs" style={{ color: '#8b7355' }}>可在预览区直接拖动位置</p>
+                          </div>
+                        </div>
+                        <button onClick={() => deleteSticker(selectedSticker.id)} className="px-2 py-1 rounded-lg text-xs transition-colors" style={{ color: '#c4788a', background: 'rgba(196,120,138,0.1)' }}>
+                          删除
+                        </button>
+                      </div>
+
+                      <div>
+                        <div className="flex items-center justify-between mb-1">
+                          <label className="text-xs" style={{ color: '#8b7355' }}>大小</label>
+                          <span className="text-xs" style={{ color: '#2c1810' }}>{selectedSticker.size}px</span>
+                        </div>
+                        <input type="range" min="24" max="72" value={selectedSticker.size} onChange={(e) => updateSticker(selectedSticker.id, { size: Number(e.target.value) })} className="w-full" />
+                      </div>
+
+                      <div>
+                        <div className="flex items-center justify-between mb-1">
+                          <label className="text-xs" style={{ color: '#8b7355' }}>旋转</label>
+                          <span className="text-xs" style={{ color: '#2c1810' }}>{selectedSticker.rotation}°</span>
+                        </div>
+                        <input type="range" min="-45" max="45" value={selectedSticker.rotation} onChange={(e) => updateSticker(selectedSticker.id, { rotation: Number(e.target.value) })} className="w-full" />
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="rounded-xl p-3 text-xs" style={{ background: '#fdf6f0', border: '1px dashed #e8d5c4', color: '#8b7355' }}>
+                      先添加一个贴纸，然后在右侧请帖预览中拖动到喜欢的位置。
+                    </div>
+                  )}
+
+                  {info.stickers.length > 0 && (
+                    <div className="space-y-2">
+                      <label className="text-xs font-semibold block" style={{ color: '#8b7355' }}>贴纸列表</label>
+                      <div className="space-y-2">
+                        {info.stickers.map((sticker, index) => (
+                          <div
+                            key={sticker.id}
+                            className="w-full flex items-center justify-between rounded-xl px-3 py-2 transition-all"
+                            style={{
+                              background: selectedStickerId === sticker.id ? '#fdf0e8' : '#fff',
+                              border: selectedStickerId === sticker.id ? '1px solid #c9a84c' : '1px solid #e8d5c4'
+                            }}
+                          >
+                            <button type="button" onClick={() => setSelectedStickerId(sticker.id)} className="flex flex-1 items-center gap-2 text-left">
+                              <span className="text-xl">{getStickerEmoji(sticker.type)}</span>
+                              <div>
+                                <p className="text-sm" style={{ color: '#2c1810' }}>贴纸 {index + 1}</p>
+                                <p className="text-xs" style={{ color: '#8b7355' }}>位置 {Math.round(sticker.x)}%, {Math.round(sticker.y)}%</p>
+                              </div>
+                            </button>
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                deleteSticker(sticker.id);
+                              }}
+                              className="p-1 rounded transition-colors hover:bg-red-50"
+                            >
+                              <Trash2 className="w-4 h-4" style={{ color: '#c4788a' }} />
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+
             <button onClick={handleShare} className="w-full flex items-center justify-center gap-2 py-3 rounded-xl font-semibold transition-all hover:opacity-90" style={{ background: 'linear-gradient(135deg, #c4788a, #c9a84c)', color: 'white' }}>
               <Share2 className="w-5 h-5" />
               分享请帖
@@ -1307,7 +1794,7 @@ const WeddingInvitationGenerator = () => {
         <div className={`${isMobile ? (mobileView === 'preview' ? 'block' : 'hidden') : 'block'} flex-1 bg-gray-50 p-4 sm:p-8 overflow-auto`}>
           <div className="max-w-md mx-auto">
             <div className="bg-white rounded-xl shadow-lg overflow-hidden">
-              <div ref={previewRef} className="w-full" style={{ maxWidth: '375px', margin: '0 auto' }}>
+              <div ref={previewRef} className="relative w-full" style={{ maxWidth: '375px', margin: '0 auto' }} onClick={() => setSelectedStickerId(null)}>
                 {renderTemplate()}
               </div>
             </div>
@@ -1330,7 +1817,13 @@ const WeddingInvitationGenerator = () => {
         </div>
       )}
 
-      <ShareModal isOpen={showShareModal} onClose={() => setShowShareModal(false)} shareUrl={shareUrl} onDownloadImage={handleDownloadImage} />
+      <ShareModal
+        isOpen={showShareModal}
+        onClose={() => setShowShareModal(false)}
+        shareUrl={shareUrl}
+        shareHint={shareHint}
+        onDownloadImage={handleDownloadImage}
+      />
 
       {showMapModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onClick={() => setShowMapModal(false)}>

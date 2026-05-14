@@ -109,7 +109,7 @@ const FallingPetals: React.FC<FallingPetalsProps> = ({
     ctx.stroke();
   }, []);
 
-  const animate = useCallback((now: number) => {
+  const animate = useCallback(function animateFrame(now: number) {
     if (!enabled) return;
 
     const frontCanvas = frontCanvasRef.current;
@@ -181,7 +181,7 @@ const FallingPetals: React.FC<FallingPetalsProps> = ({
       }
     }
 
-    animationRef.current = requestAnimationFrame(animate);
+    animationRef.current = requestAnimationFrame(animateFrame);
   }, [enabled, mouseInfluence, rand, makePetal, drawPetal]);
 
   useEffect(() => {
@@ -235,6 +235,13 @@ const FallingPetals: React.FC<FallingPetalsProps> = ({
     if (enabled) {
       lastTimeRef.current = performance.now();
       animationRef.current = requestAnimationFrame(animate);
+    } else {
+      const frontCtx = frontCanvas.getContext('2d');
+      const backCtx = backCanvas.getContext('2d');
+      if (frontCtx && backCtx) {
+        frontCtx.clearRect(0, 0, frontCanvas.width, frontCanvas.height);
+        backCtx.clearRect(0, 0, backCanvas.width, backCanvas.height);
+      }
     }
 
     return () => {
@@ -246,27 +253,6 @@ const FallingPetals: React.FC<FallingPetalsProps> = ({
       }
     };
   }, [enabled, minPetals, maxPetals, makePetal, animate]);
-
-  useEffect(() => {
-    if (enabled) {
-      lastTimeRef.current = performance.now();
-      animationRef.current = requestAnimationFrame(animate);
-    } else {
-      if (animationRef.current) {
-        cancelAnimationFrame(animationRef.current);
-      }
-      const frontCanvas = frontCanvasRef.current;
-      const backCanvas = backCanvasRef.current;
-      if (frontCanvas && backCanvas) {
-        const frontCtx = frontCanvas.getContext('2d');
-        const backCtx = backCanvas.getContext('2d');
-        if (frontCtx && backCtx) {
-          frontCtx.clearRect(0, 0, frontCanvas.width, frontCanvas.height);
-          backCtx.clearRect(0, 0, backCanvas.width, backCanvas.height);
-        }
-      }
-    }
-  }, [enabled, animate]);
 
   return (
     <>
