@@ -76,6 +76,11 @@ export const uploadImageDataUrlToCloud = async (folder: string, dataUrl: string,
   return uploadFileToCloud(SUPABASE_BUCKETS.images, folder, file, fileName);
 };
 
+export const uploadAudioDataUrlToCloud = async (dataUrl: string, fileName = 'audio.mp3') => {
+  const file = await dataUrlToBlob(dataUrl);
+  return uploadFileToCloud(SUPABASE_BUCKETS.audio, 'music', file, fileName);
+};
+
 export const uploadAudioFileToCloud = async (file: File) => {
   return uploadFileToCloud(SUPABASE_BUCKETS.audio, 'music', file);
 };

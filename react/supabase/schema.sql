@@ -29,6 +29,13 @@ for insert
 to anon, authenticated
 with check (true);
 
+insert into storage.buckets (id, name, public)
+values
+  ('wedding-images', 'wedding-images', true),
+  ('wedding-audio', 'wedding-audio', true)
+on conflict (id) do update
+set public = excluded.public;
+
 drop policy if exists "public upload wedding images" on storage.objects;
 create policy "public upload wedding images"
 on storage.objects

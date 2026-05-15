@@ -5,7 +5,7 @@ import { toast } from 'sonner';
 import ImageCropper from '../components/ImageCropper';
 import { AnimatedSticker, getStickerFrameSize, StickerVisualStyles, type StickerVisualType } from '../components/AnimatedSticker';
 import { QRCodeCanvas } from 'qrcode.react';
-import { createInvitationInCloud, isSupabaseConfigured, uploadAudioFileToCloud, uploadImageDataUrlToCloud } from '../lib/weddingCloud';
+import { createInvitationInCloud, isSupabaseConfigured, uploadAudioDataUrlToCloud, uploadAudioFileToCloud, uploadImageDataUrlToCloud } from '../lib/weddingCloud';
 
 export interface PageModule {
   id: string;
@@ -219,6 +219,33 @@ const readFileAsDataUrl = (file: File): Promise<string> => {
     reader.onerror = () => reject(new Error('文件读取失败'));
     reader.readAsDataURL(file);
   });
+};
+
+const isDataUrl = (value: string): boolean => /^data:/i.test(value);
+
+const getDataUrlExtension = (dataUrl: string, fallback: string): string => {
+  const mimeType = dataUrl.match(/^data:([^;,]+)[;,]/i)?.[1]?.toLowerCase();
+
+  switch (mimeType) {
+    case 'image/jpeg':
+      return 'jpg';
+    case 'image/png':
+      return 'png';
+    case 'image/webp':
+      return 'webp';
+    case 'image/gif':
+      return 'gif';
+    case 'audio/mpeg':
+    case 'audio/mp3':
+      return 'mp3';
+    case 'audio/wav':
+    case 'audio/x-wav':
+      return 'wav';
+    case 'audio/ogg':
+      return 'ogg';
+    default:
+      return fallback;
+  }
 };
 
 const getUploadErrorMessage = (error: unknown): string => {
@@ -1369,6 +1396,78 @@ const WeddingInvitationGenerator = () => {
     return uploadImageToCloudIfEnabled('covers', dataUrl, 'cover.jpg');
   }, [uploadImageToCloudIfEnabled]);
 
+  const ensureCloudImageUrl = useCallback(async (folder: string, value: string, fileNameBase: string) => {
+    if (!value || !isDataUrl(value)) {
+      return value;
+    }
+
+    const extension = getDataUrlExtension(value, 'jpg');
+    return uploadImageDataUrlToCloud(folder, value, `${fileNameBase}.${extension}`);
+  }, []);
+
+  const ensureCloudAudioUrl = useCallback(async (value: string, fileNameBase: string) => {
+    if (!value || !isDataUrl(value)) {
+      return value;
+    }
+
+    const extension = getDataUrlExtension(value, 'mp3');
+    return uploadAudioDataUrlToCloud(value, `${fileNameBase}.${extension}`);
+  }, []);
+
+  const prepareInfoForCloudShare = useCallback(async (currentInfo: WeddingInfo) => {
+    let uploadedAssetCount = 0;
+
+    const trackUploadedValue = (previousValue: string, nextValue: string) => {
+      if (previousValue && previousValue !== nextValue) {
+        uploadedAssetCount += 1;
+      }
+    };
+
+    const coverImage = await ensureCloudImageUrl('covers', currentInfo.coverImage, 'cover-share');
+    trackUploadedValue(currentInfo.coverImage, coverImage);
+
+    const galleryImages = await Promise.all(
+      currentInfo.galleryImages.map((image, index) =>
+        ensureCloudImageUrl('gallery', image, `gallery-${index + 1}`)
+      )
+    );
+    currentInfo.galleryImages.forEach((image, index) => trackUploadedValue(image, galleryImages[index]));
+
+    const pages = await Promise.all(
+      currentInfo.pages.map(async (page, pageIndex) => {
+        const pageImage = await ensureCloudImageUrl('pages', page.image || '', `page-${pageIndex + 1}`);
+        trackUploadedValue(page.image || '', pageImage);
+
+        const pageImages = await Promise.all(
+          (page.images || []).map((image, imageIndex) =>
+            ensureCloudImageUrl('pages/gallery', image, `page-${pageIndex + 1}-gallery-${imageIndex + 1}`)
+          )
+        );
+        (page.images || []).forEach((image, imageIndex) => trackUploadedValue(image, pageImages[imageIndex]));
+
+        return {
+          ...page,
+          image: pageImage,
+          images: pageImages
+        };
+      })
+    );
+
+    const bgMusic = await ensureCloudAudioUrl(currentInfo.bgMusic, 'wedding-music');
+    trackUploadedValue(currentInfo.bgMusic, bgMusic);
+
+    return {
+      info: {
+        ...currentInfo,
+        coverImage,
+        galleryImages,
+        pages,
+        bgMusic
+      },
+      uploadedAssetCount
+    };
+  }, [ensureCloudAudioUrl, ensureCloudImageUrl]);
+
   const addSticker = (type: StickerType) => {
     stickerIdRef.current += 1;
     const offset = info.stickers.length % 4;
@@ -1456,26 +1555,38 @@ const WeddingInvitationGenerator = () => {
   };
 
   const generateShareUrl = useCallback(async () => {
-    const payload = buildSharePayload(info, activeTemplate);
+    let shareInfo = info;
+    let shareHintPrefix = '';
 
     if (isSupabaseConfigured) {
       try {
+        const preparedInfo = await prepareInfoForCloudShare(info);
+        shareInfo = preparedInfo.info;
+
+        if (preparedInfo.uploadedAssetCount > 0) {
+          setInfo(shareInfo);
+          shareHintPrefix = `已自动上传 ${preparedInfo.uploadedAssetCount} 个本地素材到 Supabase，`;
+        }
+
+        const payload = buildSharePayload(shareInfo, activeTemplate);
         const invitationId = await createInvitationInCloud({
           template: activeTemplate,
           payload,
-          coverImageUrl: info.coverImage || null,
-          galleryImageUrls: info.galleryImages,
-          bgMusicUrl: info.bgMusic || null,
+          coverImageUrl: shareInfo.coverImage || null,
+          galleryImageUrls: shareInfo.galleryImages,
+          bgMusicUrl: shareInfo.bgMusic || null,
         });
 
         return {
           url: `${window.location.origin}/#/preview?id=${invitationId}`,
-          hint: '已生成 Supabase 云端分享链接，可跨设备访问。'
+          hint: `${shareHintPrefix}已生成 Supabase 云端分享链接，可跨设备访问。`
         };
       } catch (cloudError) {
         console.error('Failed to create Supabase share URL:', cloudError);
       }
     }
+
+    const payload = buildSharePayload(shareInfo, activeTemplate);
 
     try {
       const configData = await buildConfigShareUrl(payload);
