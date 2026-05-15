@@ -589,7 +589,50 @@ const ShareModal = ({ isOpen, onClose, shareUrl, shareHint, onDownloadImage }) =
   const [copied, setCopied] = useState(false);
   const [activeTab, setActiveTab] = useState<'link' | 'qr'>('link');
 
+  const legacyCopyText = (text: string): boolean => {
+    try {
+      const textarea = document.createElement('textarea');
+      textarea.value = text;
+      textarea.setAttribute('readonly', 'true');
+      textarea.style.fontSize = '16px';
+      textarea.style.position = 'fixed';
+      textarea.style.top = '0';
+      textarea.style.left = '-9999px';
+      textarea.style.opacity = '1';
+      textarea.style.pointerEvents = 'none';
+      document.body.appendChild(textarea);
+
+      const isIOS = /ipad|iphone|ipod/i.test(window.navigator.userAgent);
+      if (isIOS) {
+        const range = document.createRange();
+        range.selectNodeContents(textarea);
+        const selection = window.getSelection();
+        selection?.removeAllRanges();
+        selection?.addRange(range);
+        textarea.setSelectionRange(0, textarea.value.length);
+      } else {
+        textarea.focus();
+        textarea.select();
+        textarea.setSelectionRange(0, textarea.value.length);
+      }
+
+      const copied = document.execCommand('copy');
+      const selection = window.getSelection();
+      selection?.removeAllRanges();
+      document.body.removeChild(textarea);
+      return copied;
+    } catch {
+      return false;
+    }
+  };
+
   const copyText = async (text: string): Promise<boolean> => {
+    const shouldPreferLegacyCopy = /android|iphone|ipad|ipod|mobile|micromessenger/i.test(window.navigator.userAgent);
+
+    if (shouldPreferLegacyCopy && legacyCopyText(text)) {
+      return true;
+    }
+
     try {
       if (navigator.clipboard?.writeText) {
         await navigator.clipboard.writeText(text);
@@ -599,25 +642,7 @@ const ShareModal = ({ isOpen, onClose, shareUrl, shareHint, onDownloadImage }) =
       // Fall through to the legacy copy path for mobile browsers.
     }
 
-    try {
-      const textarea = document.createElement('textarea');
-      textarea.value = text;
-      textarea.setAttribute('readonly', 'true');
-      textarea.style.position = 'fixed';
-      textarea.style.top = '0';
-      textarea.style.left = '0';
-      textarea.style.opacity = '0';
-      textarea.style.pointerEvents = 'none';
-      document.body.appendChild(textarea);
-      textarea.focus();
-      textarea.select();
-      textarea.setSelectionRange(0, textarea.value.length);
-      const copied = document.execCommand('copy');
-      document.body.removeChild(textarea);
-      return copied;
-    } catch {
-      return false;
-    }
+    return legacyCopyText(text);
   };
 
   const handleCopy = async (url) => {
