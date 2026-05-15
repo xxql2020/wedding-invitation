@@ -3,6 +3,7 @@ import { Heart, Calendar, MapPin, Phone, Download, Sparkles, Clock, User, Upload
 import html2canvas from 'html2canvas';
 import { toast } from 'sonner';
 import ImageCropper from '../components/ImageCropper';
+import { AnimatedSticker, getStickerFrameSize, StickerVisualStyles, type StickerVisualType } from '../components/AnimatedSticker';
 import { QRCodeCanvas } from 'qrcode.react';
 import { createInvitationInCloud, isSupabaseConfigured, uploadAudioFileToCloud, uploadImageDataUrlToCloud } from '../lib/weddingCloud';
 
@@ -42,7 +43,7 @@ export interface WeddingInfo {
   stickers: StickerItem[];
 }
 
-type StickerType = 'rose' | 'heart' | 'bell' | 'fireworks';
+type StickerType = StickerVisualType;
 
 interface StickerItem {
   id: string;
@@ -271,10 +272,6 @@ const stickerOptions: Array<{ id: StickerType; label: string; emoji: string }> =
 ];
 
 const clamp = (value: number, min: number, max: number) => Math.min(Math.max(value, min), max);
-
-const getStickerEmoji = (type: StickerType) => {
-  return stickerOptions.find(option => option.id === type)?.emoji || '✨';
-};
 
 const invitationMotionStyles = `
   @keyframes invitationPageFlip {
@@ -879,35 +876,38 @@ const StickerLayer = ({
 
   return (
     <div className="absolute inset-0 pointer-events-none">
-      {stickers.map((sticker) => (
-        <button
-          key={sticker.id}
-          type="button"
-          onClick={(event) => {
-            if (!editable) return;
-            event.stopPropagation();
-            onSelectSticker?.(sticker.id);
-          }}
-          onPointerDown={(event) => handlePointerDown(event, sticker.id)}
-          className={`absolute flex items-center justify-center rounded-full transition-all ${editable ? 'pointer-events-auto cursor-move' : 'pointer-events-none'}`}
-          style={{
-            left: `${sticker.x}%`,
-            top: `${sticker.y}%`,
-            width: `${sticker.size + 12}px`,
-            height: `${sticker.size + 12}px`,
-            fontSize: `${sticker.size}px`,
-            lineHeight: 1,
-            transform: `translate(-50%, -50%) rotate(${sticker.rotation}deg)`,
-            background: editable && selectedStickerId === sticker.id ? 'rgba(255,255,255,0.65)' : 'transparent',
-            boxShadow: editable && selectedStickerId === sticker.id ? '0 0 0 2px rgba(196,120,138,0.35)' : 'none',
-            touchAction: 'none',
-            zIndex: 20
-          }}
-          aria-label={`贴纸-${sticker.type}`}
-        >
-          <span>{getStickerEmoji(sticker.type)}</span>
-        </button>
-      ))}
+      {stickers.map((sticker) => {
+        const frameSize = getStickerFrameSize(sticker.size);
+        const isSelected = editable && selectedStickerId === sticker.id;
+
+        return (
+          <button
+            key={sticker.id}
+            type="button"
+            onClick={(event) => {
+              if (!editable) return;
+              event.stopPropagation();
+              onSelectSticker?.(sticker.id);
+            }}
+            onPointerDown={(event) => handlePointerDown(event, sticker.id)}
+            className={`absolute flex items-center justify-center rounded-full border-0 p-0 transition-all ${editable ? 'pointer-events-auto cursor-move' : 'pointer-events-none'}`}
+            style={{
+              left: `${sticker.x}%`,
+              top: `${sticker.y}%`,
+              width: `${frameSize}px`,
+              height: `${frameSize}px`,
+              transform: `translate(-50%, -50%) rotate(${sticker.rotation}deg)`,
+              background: isSelected ? 'rgba(255,255,255,0.72)' : 'transparent',
+              boxShadow: isSelected ? '0 0 0 2px rgba(196,120,138,0.35)' : 'none',
+              touchAction: 'none',
+              zIndex: 20
+            }}
+            aria-label={`贴纸-${sticker.type}`}
+          >
+            <AnimatedSticker type={sticker.type} selected={isSelected} />
+          </button>
+        );
+      })}
     </div>
   );
 };
@@ -1621,6 +1621,7 @@ const WeddingInvitationGenerator = () => {
   return (
     <div className="min-h-screen" style={{ background: '#faf7f4' }}>
       <InvitationMotionStyles />
+      <StickerVisualStyles />
       <header className="w-full" style={{ background: 'linear-gradient(135deg, #2c1810 0%, #4a1e28 100%)', borderBottom: '1px solid rgba(201,168,76,0.3)' }}>
         <div className="mx-auto flex items-center justify-between px-4 sm:px-8 py-3 sm:py-4" style={{ maxWidth: '1440px' }}>
           <div className="flex items-center gap-3">
@@ -2089,7 +2090,9 @@ const WeddingInvitationGenerator = () => {
                           className="flex items-center gap-2 rounded-xl px-3 py-2 text-left transition-all hover:opacity-85"
                           style={{ background: '#fdf6f0', border: '1px solid #e8d5c4' }}
                         >
-                          <span className="text-xl leading-none">{sticker.emoji}</span>
+                          <div className="w-11 h-11 shrink-0">
+                            <AnimatedSticker type={sticker.id} />
+                          </div>
                           <div>
                             <p className="text-sm font-medium" style={{ color: '#2c1810' }}>{sticker.label}</p>
                             <p className="text-xs" style={{ color: '#8b7355' }}>点击加入请帖</p>
@@ -2103,7 +2106,9 @@ const WeddingInvitationGenerator = () => {
                     <div className="rounded-xl p-3 space-y-3" style={{ background: '#fdf6f0', border: '1px solid #e8d5c4' }}>
                       <div className="flex items-center justify-between">
                         <div className="flex items-center gap-2">
-                          <span className="text-2xl">{getStickerEmoji(selectedSticker.type)}</span>
+                          <div className="w-12 h-12 shrink-0">
+                            <AnimatedSticker type={selectedSticker.type} selected />
+                          </div>
                           <div>
                             <p className="text-sm font-medium" style={{ color: '#2c1810' }}>当前贴纸</p>
                             <p className="text-xs" style={{ color: '#8b7355' }}>可在预览区直接拖动位置</p>
@@ -2150,7 +2155,9 @@ const WeddingInvitationGenerator = () => {
                             }}
                           >
                             <button type="button" onClick={() => setSelectedStickerId(sticker.id)} className="flex flex-1 items-center gap-2 text-left">
-                              <span className="text-xl">{getStickerEmoji(sticker.type)}</span>
+                              <div className="w-10 h-10 shrink-0">
+                                <AnimatedSticker type={sticker.type} selected={selectedStickerId === sticker.id} />
+                              </div>
                               <div>
                                 <p className="text-sm" style={{ color: '#2c1810' }}>贴纸 {index + 1}</p>
                                 <p className="text-xs" style={{ color: '#8b7355' }}>位置 {Math.round(sticker.x)}%, {Math.round(sticker.y)}%</p>

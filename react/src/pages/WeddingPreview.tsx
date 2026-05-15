@@ -3,6 +3,7 @@ import { Heart, Play, Pause } from 'lucide-react';
 import html2canvas from 'html2canvas';
 import { toast } from 'sonner';
 import { QRCodeCanvas } from 'qrcode.react';
+import { AnimatedSticker, getStickerFrameSize, StickerVisualStyles, type StickerVisualType } from '../components/AnimatedSticker';
 import FallingPetals from '../components/FallingPetals';
 import '../components/FallingPetals.css';
 import { getInvitationFromCloud, isSupabaseConfigured } from '../lib/weddingCloud';
@@ -50,7 +51,7 @@ interface SharePayload {
   createdAt?: number;
 }
 
-type StickerType = 'rose' | 'heart' | 'bell' | 'fireworks';
+type StickerType = StickerVisualType;
 
 interface StickerItem {
   id: string;
@@ -152,13 +153,6 @@ const parseCompressedPayload = async (value: string): Promise<SharePayload | Wed
   const decompressedStream = new Blob([bytes]).stream().pipeThrough(new window.DecompressionStream('gzip'));
   const json = await new Response(decompressedStream).text();
   return JSON.parse(json) as SharePayload | WeddingInfo;
-};
-
-const stickerEmojiMap: Record<StickerType, string> = {
-  rose: '🌹',
-  heart: '💖',
-  bell: '🔔',
-  fireworks: '🎆'
 };
 
 const invitationMotionStyles = `
@@ -616,24 +610,26 @@ const StickerLayer = ({ stickers }: { stickers: StickerItem[] }) => {
 
   return (
     <div className="absolute inset-0 pointer-events-none">
-      {stickers.map((sticker) => (
-        <div
-          key={sticker.id}
-          className="absolute flex items-center justify-center"
-          style={{
-            left: `${sticker.x}%`,
-            top: `${sticker.y}%`,
-            width: `${sticker.size + 12}px`,
-            height: `${sticker.size + 12}px`,
-            fontSize: `${sticker.size}px`,
-            lineHeight: 1,
-            transform: `translate(-50%, -50%) rotate(${sticker.rotation}deg)`,
-            zIndex: 20
-          }}
-        >
-          <span>{stickerEmojiMap[sticker.type] || '✨'}</span>
-        </div>
-      ))}
+      {stickers.map((sticker) => {
+        const frameSize = getStickerFrameSize(sticker.size);
+
+        return (
+          <div
+            key={sticker.id}
+            className="absolute flex items-center justify-center"
+            style={{
+              left: `${sticker.x}%`,
+              top: `${sticker.y}%`,
+              width: `${frameSize}px`,
+              height: `${frameSize}px`,
+              transform: `translate(-50%, -50%) rotate(${sticker.rotation}deg)`,
+              zIndex: 20
+            }}
+          >
+            <AnimatedSticker type={sticker.type} />
+          </div>
+        );
+      })}
     </div>
   );
 };
@@ -1285,6 +1281,7 @@ const WeddingPreview = () => {
   return (
     <div className="min-h-screen" style={{ background: '#f5f5f5' }}>
       <InvitationMotionStyles />
+      <StickerVisualStyles />
       <FallingPetals enabled={info?.petalsEnabled || false} />
       {info?.bgMusic && (
         <audio ref={audioRef} src={info.bgMusic} loop preload="auto" />
