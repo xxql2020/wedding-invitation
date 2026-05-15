@@ -4,6 +4,7 @@ import html2canvas from 'html2canvas';
 import { toast } from 'sonner';
 import ImageCropper from '../components/ImageCropper';
 import { QRCodeCanvas } from 'qrcode.react';
+import { createInvitationInCloud, isSupabaseConfigured, uploadAudioFileToCloud, uploadImageDataUrlToCloud } from '../lib/weddingCloud';
 
 export interface PageModule {
   id: string;
@@ -14,6 +15,8 @@ export interface PageModule {
   images?: string[];
   font?: string;
   backgroundColor?: string;
+  aspectRatio?: string;
+  galleryMode?: 'carousel' | 'grid';
 }
 
 export interface WeddingInfo {
@@ -142,9 +145,50 @@ const buildSharePayload = (info: WeddingInfo, template: string): SharePayload =>
   createdAt: Date.now()
 });
 
-const buildConfigShareUrl = (payload: SharePayload): string => {
+const encodeBase64Url = (value: string): string => {
+  return value.replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/g, '');
+};
+
+const decodeBase64Url = (value: string): string => {
+  const normalized = value.replace(/-/g, '+').replace(/_/g, '/');
+  const padding = normalized.length % 4 === 0 ? '' : '='.repeat(4 - (normalized.length % 4));
+  return normalized + padding;
+};
+
+const bytesToBase64Url = (bytes: Uint8Array): string => {
+  let binary = '';
+  const chunkSize = 0x8000;
+  for (let i = 0; i < bytes.length; i += chunkSize) {
+    binary += String.fromCharCode(...bytes.subarray(i, i + chunkSize));
+  }
+  return encodeBase64Url(btoa(binary));
+};
+
+const compressPayload = async (payload: SharePayload): Promise<string | null> => {
+  if (typeof window === 'undefined' || typeof window.CompressionStream === 'undefined') {
+    return null;
+  }
+
+  const json = JSON.stringify(payload);
+  const compressedStream = new Blob([json]).stream().pipeThrough(new window.CompressionStream('gzip'));
+  const compressedBuffer = await new Response(compressedStream).arrayBuffer();
+  return bytesToBase64Url(new Uint8Array(compressedBuffer));
+};
+
+const buildConfigShareUrl = async (payload: SharePayload): Promise<{ url: string; compressed: boolean }> => {
+  const compressed = await compressPayload(payload);
+  if (compressed) {
+    return {
+      url: `${window.location.origin}/#/preview?configz=${compressed}`,
+      compressed: true
+    };
+  }
+
   const encoded = btoa(encodeURIComponent(JSON.stringify(payload)));
-  return `${window.location.origin}/#/preview?config=${encoded}`;
+  return {
+    url: `${window.location.origin}/#/preview?config=${encoded}`,
+    compressed: false
+  };
 };
 
 const createShortCode = (): string => {
@@ -167,6 +211,33 @@ const getFileFromInputEvent = (event: Event): File | null => {
   return target.files?.[0] ?? null;
 };
 
+const readFileAsDataUrl = (file: File): Promise<string> => {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = (event) => resolve(event.target?.result as string);
+    reader.onerror = () => reject(new Error('文件读取失败'));
+    reader.readAsDataURL(file);
+  });
+};
+
+const getUploadErrorMessage = (error: unknown): string => {
+  const message = error instanceof Error ? error.message : String(error || '');
+
+  if (/row-level security|violates row-level security/i.test(message)) {
+    return 'Supabase Storage 还没有开放上传权限，请重新执行 schema.sql 里的 storage 策略。';
+  }
+
+  if (/bucket.*not found|not found/i.test(message)) {
+    return 'Supabase bucket 不存在，请检查是否已创建 wedding-images 和 wedding-audio。';
+  }
+
+  if (/mime type|content type/i.test(message)) {
+    return '文件类型不受支持，请更换图片后重试。';
+  }
+
+  return message || '上传失败，请重试。';
+};
+
 const fonts = [
   { id: 'cormorant', name: '优雅衬线', family: "'Cormorant Garamond', serif" },
   { id: 'dancing', name: '花体手写', family: "'Dancing Script', cursive" },
@@ -174,6 +245,23 @@ const fonts = [
   { id: 'noto', name: '思源宋体', family: "'Noto Serif SC', serif" },
   { id: 'sans', name: '现代无衬线', family: "'Noto Sans SC', sans-serif" },
 ];
+
+const aspectRatioOptions = [
+  { value: '1 / 1', label: '正方形 1:1' },
+  { value: '4 / 3', label: '横版 4:3' },
+  { value: '3 / 4', label: '竖版 3:4' },
+  { value: '16 / 9', label: '宽屏 16:9' },
+  { value: '9 / 16', label: '长屏 9:16' }
+];
+
+const parseAspectRatio = (value?: string | number): number | undefined => {
+  if (typeof value === 'number') return value;
+  if (!value) return undefined;
+
+  const parts = value.split('/').map((item) => Number(item.trim()));
+  if (parts.length !== 2 || !parts[0] || !parts[1]) return undefined;
+  return parts[0] / parts[1];
+};
 
 const stickerOptions: Array<{ id: StickerType; label: string; emoji: string }> = [
   { id: 'rose', label: '玫瑰花', emoji: '🌹' },
@@ -186,6 +274,182 @@ const clamp = (value: number, min: number, max: number) => Math.min(Math.max(val
 
 const getStickerEmoji = (type: StickerType) => {
   return stickerOptions.find(option => option.id === type)?.emoji || '✨';
+};
+
+const invitationMotionStyles = `
+  @keyframes invitationPageFlip {
+    0% {
+      opacity: 0;
+      transform: perspective(1200px) rotateX(-12deg) translateY(28px) scale(0.98);
+    }
+    100% {
+      opacity: 1;
+      transform: perspective(1200px) rotateX(0deg) translateY(0) scale(1);
+    }
+  }
+
+  @keyframes invitationImageZoom {
+    0% {
+      transform: scale(1);
+    }
+    100% {
+      transform: scale(1.08);
+    }
+  }
+
+  @keyframes invitationCarouselSlide {
+    0% {
+      opacity: 0;
+      transform: translateX(22px) scale(0.98);
+    }
+    100% {
+      opacity: 1;
+      transform: translateX(0) scale(1);
+    }
+  }
+`;
+
+const InvitationMotionStyles = () => <style>{invitationMotionStyles}</style>;
+
+const PhotoBackdrop = ({
+  src,
+  alt,
+  opacity = 0.14,
+  blur = 0,
+}: {
+  src: string;
+  alt: string;
+  opacity?: number;
+  blur?: number;
+}) => (
+  <div className="absolute inset-0 overflow-hidden">
+    <img
+      src={src}
+      alt={alt}
+      className="w-full h-full object-cover scale-105"
+      style={{ opacity: Math.min(opacity + 0.08, 0.3), filter: `blur(${Math.max(blur, 12)}px)` }}
+    />
+    <div className="absolute inset-0" style={{ background: 'rgba(255,255,255,0.1)' }} />
+    <img
+      src={src}
+      alt={alt}
+      className="absolute inset-0 w-full h-full object-contain"
+      style={{ opacity, filter: blur ? `blur(${blur}px)` : 'none', animation: 'invitationImageZoom 12s ease-in-out infinite alternate' }}
+    />
+  </div>
+);
+
+const PhotoFrame = ({
+  src,
+  alt,
+  aspectRatio = '1 / 1',
+  roundedClassName = 'rounded-lg',
+  borderStyle,
+  imagePadding = 4,
+  animationDelay = '0ms'
+}: {
+  src: string;
+  alt: string;
+  aspectRatio?: string;
+  roundedClassName?: string;
+  borderStyle?: React.CSSProperties;
+  imagePadding?: number;
+  animationDelay?: string;
+}) => (
+  <div
+    className={`relative overflow-hidden ${roundedClassName}`}
+    style={{
+      aspectRatio,
+      background: 'linear-gradient(180deg, rgba(255,255,255,0.92) 0%, rgba(248,241,235,0.98) 100%)',
+      boxShadow: '0 12px 26px rgba(60, 38, 24, 0.08)',
+      ...borderStyle
+    }}
+  >
+    {!src ? (
+      <div className="absolute inset-0 flex items-center justify-center text-xs tracking-[0.2em] uppercase" style={{ color: '#b8a898' }}>
+        Wedding Photo
+      </div>
+    ) : (
+      <>
+    <img
+      src={src}
+      alt={alt}
+      className="absolute inset-0 w-full h-full object-cover scale-110"
+      style={{ filter: 'blur(18px)', opacity: 0.22 }}
+    />
+    <div className="absolute inset-0" style={{ background: 'linear-gradient(180deg, rgba(255,255,255,0.1), rgba(255,255,255,0.35))' }} />
+    <div className="absolute inset-0 flex items-center justify-center" style={{ padding: `${imagePadding}px` }}>
+      <img
+        src={src}
+        alt={alt}
+            className="w-full h-full object-contain"
+            style={{ animation: `invitationImageZoom 10s ease-in-out ${animationDelay} infinite alternate`, transformOrigin: 'center center' }}
+      />
+    </div>
+      </>
+    )}
+  </div>
+);
+
+const PhotoCarousel = ({
+  images,
+  aspectRatio = '4 / 3',
+  themeColor,
+  roundedClassName = 'rounded-xl'
+}: {
+  images: string[];
+  aspectRatio?: string;
+  themeColor: string;
+  roundedClassName?: string;
+}) => {
+  const safeImages = images.filter(Boolean);
+  const [currentIndex, setCurrentIndex] = useState(0);
+  const activeIndex = safeImages.length === 0 ? 0 : currentIndex % safeImages.length;
+
+  useEffect(() => {
+    if (safeImages.length <= 1) return;
+
+    const timer = window.setInterval(() => {
+      setCurrentIndex((prev) => (prev + 1) % safeImages.length);
+    }, 3200);
+
+    return () => window.clearInterval(timer);
+  }, [safeImages.length]);
+
+  if (safeImages.length === 0) {
+    return <PhotoFrame src="" alt="相册" aspectRatio={aspectRatio} roundedClassName={roundedClassName} />;
+  }
+
+  return (
+    <div className="space-y-3">
+      <div key={`${safeImages[activeIndex]}-${activeIndex}`} style={{ animation: 'invitationCarouselSlide 520ms ease both' }}>
+        <PhotoFrame
+          src={safeImages[activeIndex]}
+          alt={`相册 ${activeIndex + 1}`}
+          aspectRatio={aspectRatio}
+          roundedClassName={roundedClassName}
+          imagePadding={4}
+        />
+      </div>
+      {safeImages.length > 1 && (
+        <div className="flex items-center justify-center gap-2">
+          {safeImages.map((_, index) => (
+            <button
+              key={index}
+              type="button"
+              onClick={() => setCurrentIndex(index)}
+              className="h-2.5 rounded-full transition-all"
+              style={{
+                width: activeIndex === index ? '22px' : '8px',
+                background: activeIndex === index ? themeColor : `${themeColor}33`
+              }}
+              aria-label={`切换到第 ${index + 1} 张`}
+            />
+          ))}
+        </div>
+      )}
+    </div>
+  );
 };
 
 const pageTypes = [
@@ -242,7 +506,7 @@ const generateMapLink = (address: string): string => {
   })()`;
 };
 
-const ImageUploader = ({ label, value, onChange, aspectRatio = 4 / 3, placeholder = '点击上传图片', showCrop = true }) => {
+const ImageUploader = ({ label, value, onChange, aspectRatio = 4 / 3, placeholder = '点击上传图片', showCrop = true, uploadHandler }) => {
   const inputRef = useRef(null);
   const [showCropper, setShowCropper] = useState(false);
   const [tempImage, setTempImage] = useState('');
@@ -265,11 +529,17 @@ const ImageUploader = ({ label, value, onChange, aspectRatio = 4 / 3, placeholde
     }
   };
 
-  const handleCropComplete = (croppedImage) => {
-    onChange(croppedImage);
-    setShowCropper(false);
-    setTempImage('');
-    toast.success('图片裁剪并上传成功');
+  const handleCropComplete = async (croppedImage) => {
+    try {
+      const nextValue = uploadHandler ? await uploadHandler(croppedImage) : croppedImage;
+      onChange(nextValue);
+      setShowCropper(false);
+      setTempImage('');
+      toast.success('图片裁剪并上传成功');
+    } catch (error) {
+      console.error('图片上传失败:', error);
+      toast.error(getUploadErrorMessage(error));
+    }
   };
 
   const handleRemove = () => {
@@ -294,7 +564,7 @@ const ImageUploader = ({ label, value, onChange, aspectRatio = 4 / 3, placeholde
         
         {value ? (
           <div className="relative rounded-lg overflow-hidden" style={{ aspectRatio }}>
-            <img src={value} alt="预览" className="w-full h-full object-cover" />
+            <img src={value} alt="预览" className="w-full h-full object-contain" style={{ background: '#fff8f4' }} />
           </div>
         ) : (
           <div onClick={() => inputRef.current?.click()} className="relative rounded-lg overflow-hidden cursor-pointer transition-all hover:opacity-80" style={{ aspectRatio, background: 'linear-gradient(135deg, #fdf6f0 0%, #f8f0e8 100%)', border: '2px dashed #e8d5c4' }}>
@@ -315,49 +585,65 @@ const ImageUploader = ({ label, value, onChange, aspectRatio = 4 / 3, placeholde
   );
 };
 
-const GalleryUploader = ({ label, value, onChange, maxImages = 6 }) => {
+const GalleryUploader = ({ label, value, onChange, maxImages = 6, uploadHandler }) => {
   // 确保 value 始终是数组
   const images = Array.isArray(value) ? value : [];
   const inputRef = useRef(null);
   const [showCropper, setShowCropper] = useState(false);
   const [tempImage, setTempImage] = useState('');
   const [currentIndex, setCurrentIndex] = useState(-1);
+  const [pendingImages, setPendingImages] = useState<string[]>([]);
 
   const handleFileChange = (e) => {
-    const files = Array.from(e.target.files || []);
+    const files = Array.from<File>(e.target.files || []);
     if (files.length + images.length > maxImages) {
       toast.error(`最多只能上传 ${maxImages} 张图片`);
       return;
     }
-    
-    const processFile = (file, index) => {
-      const reader = new FileReader();
-      reader.onload = (event) => {
-        const result = event.target?.result as string;
-        if (index === 0) {
-          setTempImage(result);
-          setCurrentIndex(images.length);
-          setShowCropper(true);
-        } else {
-          onChange([...images, result]);
-        }
-      };
-      reader.readAsDataURL(file);
-    };
 
-    files.forEach((file, index) => processFile(file, index));
+    if (files.length === 0) return;
+
+    Promise.all(files.map((file) => new Promise<string>((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = (event) => resolve(event.target?.result as string);
+      reader.onerror = () => reject(new Error('图片读取失败'));
+      reader.readAsDataURL(file);
+    })))
+      .then((results) => {
+        const [firstImage, ...restImages] = results;
+        setTempImage(firstImage);
+        setCurrentIndex(images.length);
+        setPendingImages(restImages);
+        setShowCropper(true);
+      })
+      .catch(() => toast.error('图片读取失败，请重试'));
   };
 
-  const handleCropComplete = (croppedImage) => {
-    const newImages = [...images];
-    if (currentIndex >= 0 && currentIndex <= newImages.length) {
-      newImages.splice(currentIndex, 0, croppedImage);
+  const handleCropComplete = async (croppedImage) => {
+    try {
+      const nextImageValue = uploadHandler ? await uploadHandler(croppedImage) : croppedImage;
+      const newImages = [...images];
+      if (currentIndex >= 0 && currentIndex <= newImages.length) {
+        newImages.splice(currentIndex, 0, nextImageValue);
+      }
+      onChange(newImages);
+      if (pendingImages.length > 0) {
+        const [nextImage, ...restImages] = pendingImages;
+        setTempImage(nextImage);
+        setCurrentIndex(newImages.length);
+        setPendingImages(restImages);
+        setShowCropper(true);
+      } else {
+        setShowCropper(false);
+        setTempImage('');
+        setCurrentIndex(-1);
+        setPendingImages([]);
+        toast.success('图片上传成功');
+      }
+    } catch (error) {
+      console.error('相册图片上传失败:', error);
+      toast.error(getUploadErrorMessage(error));
     }
-    onChange(newImages);
-    setShowCropper(false);
-    setTempImage('');
-    setCurrentIndex(-1);
-    toast.success('图片上传成功');
   };
 
   const handleRemove = (index) => {
@@ -379,7 +665,7 @@ const GalleryUploader = ({ label, value, onChange, maxImages = 6 }) => {
         <div className="grid grid-cols-3 gap-2">
           {images.map((img, index) => (
             <div key={index} className="relative aspect-square rounded-lg overflow-hidden group">
-              <img src={img} alt={`相册 ${index + 1}`} className="w-full h-full object-cover" />
+              <img src={img} alt={`相册 ${index + 1}`} className="w-full h-full object-contain" style={{ background: '#fff8f4' }} />
               <button onClick={() => handleRemove(index)} className="absolute top-1 right-1 w-5 h-5 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity" style={{ background: 'rgba(139,0,0,0.8)' }}>
                 <X className="w-3 h-3 text-white" />
               </button>
@@ -397,7 +683,7 @@ const GalleryUploader = ({ label, value, onChange, maxImages = 6 }) => {
       </div>
 
       {showCropper && (
-        <ImageCropper imageSrc={tempImage} onComplete={handleCropComplete} onCancel={() => { setShowCropper(false); setTempImage(''); setCurrentIndex(-1); }} aspectRatio={1} />
+        <ImageCropper imageSrc={tempImage} onComplete={handleCropComplete} onCancel={() => { setShowCropper(false); setTempImage(''); setCurrentIndex(-1); setPendingImages([]); }} aspectRatio={1} />
       )}
     </>
   );
@@ -512,6 +798,8 @@ const ShareModal = ({ isOpen, onClose, shareUrl, shareHint, onDownloadImage }) =
 
 const PageModuleRenderer = ({ page, defaultFont, themeColor }) => {
   const font = fonts.find(f => f.id === (page.font || defaultFont)) || fonts[0];
+  const pageAspectRatio = page.aspectRatio || (page.type === 'gallery' ? '4 / 3' : '4 / 3');
+  const galleryMode = page.galleryMode || 'carousel';
   
   const renderContent = () => {
     switch (page.type) {
@@ -519,13 +807,15 @@ const PageModuleRenderer = ({ page, defaultFont, themeColor }) => {
         return (
           <div className="py-6 px-8">
             <p className="text-xs tracking-[0.3em] uppercase mb-4 text-center" style={{ color: themeColor, fontFamily: font.family }}>{page.title}</p>
-            <div className="grid grid-cols-3 gap-2">
-              {(page.images || []).slice(0, 6).map((img, i) => (
-                <div key={i} className="aspect-square rounded-lg overflow-hidden">
-                  <img src={img} alt={`相册 ${i + 1}`} className="w-full h-full object-cover" />
-                </div>
-              ))}
-            </div>
+            {galleryMode === 'carousel' ? (
+              <PhotoCarousel images={(page.images || []).slice(0, 6)} aspectRatio={pageAspectRatio} themeColor={themeColor} />
+            ) : (
+              <div className="grid grid-cols-3 gap-2">
+                {(page.images || []).slice(0, 6).map((img, i) => (
+                  <PhotoFrame key={i} src={img} alt={`相册 ${i + 1}`} aspectRatio={pageAspectRatio} animationDelay={`${i * 150}ms`} />
+                ))}
+              </div>
+            )}
           </div>
         );
         
@@ -549,15 +839,13 @@ const PageModuleRenderer = ({ page, defaultFont, themeColor }) => {
         
       case 'photo':
         return (
-          <div className="py-4 px-6">
-            <div className="rounded-lg overflow-hidden" style={{ aspectRatio: 4/3 }}>
-              <img src={page.image} alt={page.title} className="w-full h-full object-cover" />
-            </div>
+          <div className="py-4">
+            <PhotoFrame src={page.image || ''} alt={page.title} aspectRatio={pageAspectRatio} roundedClassName="rounded-none" imagePadding={0} />
             {page.title && (
-              <p className="text-xs tracking-[0.2em] uppercase mt-3 text-center" style={{ color: themeColor, fontFamily: font.family }}>{page.title}</p>
+              <p className="text-xs tracking-[0.2em] uppercase mt-3 text-center px-6" style={{ color: themeColor, fontFamily: font.family }}>{page.title}</p>
             )}
             {page.content && (
-              <p className="text-xs text-center mt-1" style={{ color: '#6b4c3b', fontFamily: font.family }}>{page.content}</p>
+              <p className="text-xs text-center mt-1 px-6" style={{ color: '#6b4c3b', fontFamily: font.family }}>{page.content}</p>
             )}
           </div>
         );
@@ -568,7 +856,7 @@ const PageModuleRenderer = ({ page, defaultFont, themeColor }) => {
   };
 
   return (
-    <div className="">
+    <div style={{ animation: 'invitationPageFlip 720ms cubic-bezier(0.22, 1, 0.36, 1) both' }}>
       {renderContent()}
     </div>
   );
@@ -668,7 +956,7 @@ const TemplateRomantic = ({ info }) => {
 
   return (
     <div className="relative w-full overflow-hidden" style={{ background: 'linear-gradient(135deg, #fdf0f0 0%, #fff8f4 40%, #fdf0e8 100%)', minHeight: '700px', fontFamily: defaultFont.family }}>
-      {info.coverImage && <div className="absolute inset-0"><img src={info.coverImage} alt="封面" className="w-full h-full object-cover" style={{ opacity: 0.15 }} /></div>}
+      {info.coverImage && <PhotoBackdrop src={info.coverImage} alt="封面" opacity={0.14} />}
       
       <div className="absolute top-0 left-0 right-0 h-1" style={{ background: `linear-gradient(90deg, transparent, ${themeColor}, ${accentColor}, ${themeColor}, transparent)` }} />
       <div className="absolute bottom-0 left-0 right-0 h-1" style={{ background: `linear-gradient(90deg, transparent, ${themeColor}, ${accentColor}, ${themeColor}, transparent)` }} />
@@ -714,7 +1002,7 @@ const TemplateRomantic = ({ info }) => {
             <p className="text-xs tracking-widest uppercase mb-2" style={{ color: themeColor }}>甜蜜瞬间</p>
             <div className="grid grid-cols-3 gap-2">
               {info.galleryImages.slice(0, 3).map((img, i) => (
-                <div key={i} className="aspect-square rounded-lg overflow-hidden"><img src={img} alt={`相册 ${i + 1}`} className="w-full h-full object-cover" /></div>
+                <PhotoFrame key={i} src={img} alt={`相册 ${i + 1}`} aspectRatio="1 / 1" animationDelay={`${i * 180}ms`} />
               ))}
             </div>
           </div>
@@ -744,7 +1032,7 @@ const TemplateClassic = ({ info }) => {
 
   return (
     <div className="relative w-full overflow-hidden" style={{ background: '#1a0a00', minHeight: '700px', fontFamily: defaultFont.family }}>
-      {info.coverImage && <div className="absolute inset-0"><img src={info.coverImage} alt="封面" className="w-full h-full object-cover" style={{ opacity: 0.2 }} /></div>}
+      {info.coverImage && <PhotoBackdrop src={info.coverImage} alt="封面" opacity={0.18} />}
       
       <div className="absolute inset-3" style={{ border: `1px solid ${themeColor}80` }} />
       <div className="absolute inset-5" style={{ border: `1px solid ${themeColor}40` }} />
@@ -783,7 +1071,7 @@ const TemplateClassic = ({ info }) => {
         {info.galleryImages?.length > 0 && (
           <div className="w-full max-w-xs mt-4 grid grid-cols-3 gap-2">
             {info.galleryImages.slice(0, 3).map((img, i) => (
-              <div key={i} className="aspect-square rounded-lg overflow-hidden"><img src={img} alt={`相册 ${i + 1}`} className="w-full h-full object-cover" /></div>
+              <PhotoFrame key={i} src={img} alt={`相册 ${i + 1}`} aspectRatio="1 / 1" animationDelay={`${i * 180}ms`} />
             ))}
           </div>
         )}
@@ -812,7 +1100,7 @@ const TemplateModern = ({ info }) => {
 
   return (
     <div className="relative w-full overflow-hidden" style={{ background: '#f8f5f0', minHeight: '700px', fontFamily: defaultFont.family }}>
-      {info.coverImage && <div className="absolute inset-0"><img src={info.coverImage} alt="封面" className="w-full h-full object-cover" style={{ opacity: 0.1 }} /></div>}
+      {info.coverImage && <PhotoBackdrop src={info.coverImage} alt="封面" opacity={0.1} />}
       
       <div className="absolute left-0 top-0 bottom-0 w-2" style={{ background: `linear-gradient(180deg, ${themeColor}, ${accentColor}, #c9a84c)` }} />
 
@@ -848,7 +1136,9 @@ const TemplateModern = ({ info }) => {
         {info.galleryImages?.length > 0 && (
           <div className="flex gap-2 mt-4">
             {info.galleryImages.slice(0, 3).map((img, i) => (
-              <div key={i} className="w-16 h-16 rounded-lg overflow-hidden"><img src={img} alt={`相册 ${i + 1}`} className="w-full h-full object-cover" /></div>
+              <div key={i} className="w-16">
+                <PhotoFrame src={img} alt={`相册 ${i + 1}`} aspectRatio="1 / 1" animationDelay={`${i * 180}ms`} />
+              </div>
             ))}
           </div>
         )}
@@ -879,7 +1169,7 @@ const TemplateChinese = ({ info }) => {
 
   return (
     <div className="relative w-full overflow-hidden" style={{ background: 'linear-gradient(160deg, #8b0000 0%, #6b0000 50%, #4a0000 100%)', minHeight: '700px', fontFamily: defaultFont.family }}>
-      {info.coverImage && <div className="absolute inset-0"><img src={info.coverImage} alt="封面" className="w-full h-full object-cover" style={{ opacity: 0.15 }} /></div>}
+      {info.coverImage && <PhotoBackdrop src={info.coverImage} alt="封面" opacity={0.14} />}
       
       <div className="absolute inset-4" style={{ border: `2px solid ${themeColor}66`, borderRadius: '4px' }} />
       <div className="absolute inset-6" style={{ border: `1px solid ${themeColor}33`, borderRadius: '2px' }} />
@@ -929,7 +1219,9 @@ const TemplateChinese = ({ info }) => {
         {info.galleryImages?.length > 0 && (
           <div className="flex gap-2 mt-4 justify-center">
             {info.galleryImages.slice(0, 3).map((img, i) => (
-              <div key={i} className="w-16 h-16 rounded-lg overflow-hidden" style={{ border: `2px solid ${themeColor}66` }}><img src={img} alt={`相册 ${i + 1}`} className="w-full h-full object-cover" /></div>
+              <div key={i} className="w-16">
+                <PhotoFrame src={img} alt={`相册 ${i + 1}`} aspectRatio="1 / 1" borderStyle={{ border: `2px solid ${themeColor}66` }} animationDelay={`${i * 180}ms`} />
+              </div>
             ))}
           </div>
         )}
@@ -959,7 +1251,7 @@ const TemplateKorean = ({ info }) => {
 
   return (
     <div className="relative w-full overflow-hidden" style={{ background: 'linear-gradient(180deg, #f7f2ed 0%, #fdfaf7 55%, #f4ede6 100%)', minHeight: '700px', fontFamily: defaultFont.family }}>
-      {info.coverImage && <div className="absolute inset-0"><img src={info.coverImage} alt="封面" className="w-full h-full object-cover" style={{ opacity: 0.08, filter: 'blur(2px)' }} /></div>}
+      {info.coverImage && <PhotoBackdrop src={info.coverImage} alt="封面" opacity={0.08} blur={2} />}
 
       <div className="absolute top-6 left-6 right-6 bottom-6 rounded-[32px]" style={{ border: `1px solid ${themeColor}40`, background: 'rgba(255,255,255,0.35)' }} />
 
@@ -996,9 +1288,7 @@ const TemplateKorean = ({ info }) => {
           <div className="w-full max-w-sm mt-5">
             <div className="grid grid-cols-3 gap-2">
               {info.galleryImages.slice(0, 3).map((img, i) => (
-                <div key={i} className="aspect-[3/4] rounded-[18px] overflow-hidden shadow-sm">
-                  <img src={img} alt={`相册 ${i + 1}`} className="w-full h-full object-cover" />
-                </div>
+                <PhotoFrame key={i} src={img} alt={`相册 ${i + 1}`} aspectRatio="3 / 4" roundedClassName="rounded-[18px]" animationDelay={`${i * 180}ms`} />
               ))}
             </div>
           </div>
@@ -1042,6 +1332,11 @@ const WeddingInvitationGenerator = () => {
   const [expandedSections, setExpandedSections] = useState({ basic: true, pages: false, appearance: true, stickers: true });
   const [editingPage, setEditingPage] = useState<string | null>(null);
   const [selectedStickerId, setSelectedStickerId] = useState<string | null>(null);
+  const [pendingCropImage, setPendingCropImage] = useState<{
+    imageSrc: string;
+    aspectRatio?: number;
+    onComplete: (croppedImage: string) => void | Promise<void>;
+  } | null>(null);
   const [mobileView, setMobileView] = useState<'edit' | 'preview'>('edit');
   const [isMobile, setIsMobile] = useState(false);
   const previewRef = useRef<HTMLDivElement | null>(null);
@@ -1078,6 +1373,35 @@ const WeddingInvitationGenerator = () => {
   const updateField = (field, value) => {
     setInfo(prev => ({ ...prev, [field]: value }));
   };
+
+  const uploadImageToCloudIfEnabled = useCallback(async (folder: string, dataUrl: string, fileName: string) => {
+    if (!isSupabaseConfigured) {
+      return dataUrl;
+    }
+
+    return uploadImageDataUrlToCloud(folder, dataUrl, fileName);
+  }, []);
+
+  const openImageCropper = useCallback((file: File, onComplete: (croppedImage: string) => void, aspectRatio?: number) => {
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      setPendingCropImage({
+        imageSrc: event.target?.result as string,
+        aspectRatio,
+        onComplete
+      });
+    };
+    reader.onerror = () => toast.error('图片读取失败，请重试');
+    reader.readAsDataURL(file);
+  }, []);
+
+  const handleCoverImageUpload = useCallback(async (dataUrl: string) => {
+    return uploadImageToCloudIfEnabled('covers', dataUrl, 'cover.jpg');
+  }, [uploadImageToCloudIfEnabled]);
+
+  const handleGalleryImageUpload = useCallback(async (dataUrl: string) => {
+    return uploadImageToCloudIfEnabled('gallery', dataUrl, 'gallery.jpg');
+  }, [uploadImageToCloudIfEnabled]);
 
   const addSticker = (type: StickerType) => {
     stickerIdRef.current += 1;
@@ -1125,7 +1449,9 @@ const WeddingInvitationGenerator = () => {
       content: '',
       image: '',
       images: [],
-      font: ''
+      font: '',
+      aspectRatio: type === 'gallery' ? '4 / 3' : '4 / 3',
+      galleryMode: type === 'gallery' ? 'carousel' : undefined
     };
     setInfo(prev => ({ ...prev, pages: [...prev.pages, newPage] }));
     setEditingPage(newPage.id);
@@ -1163,29 +1489,58 @@ const WeddingInvitationGenerator = () => {
     setExpandedSections(prev => ({ ...prev, [section]: !prev[section] }));
   };
 
-  const generateShareUrl = useCallback(() => {
-    try {
-      const payload = buildSharePayload(info, activeTemplate);
-      const configUrl = buildConfigShareUrl(payload);
+  const generateShareUrl = useCallback(async () => {
+    const payload = buildSharePayload(info, activeTemplate);
 
-      if (configUrl.length <= MAX_SHARE_URL_LENGTH) {
-        return { url: configUrl, hint: '' };
+    if (isSupabaseConfigured) {
+      try {
+        const invitationId = await createInvitationInCloud({
+          template: activeTemplate,
+          payload,
+          coverImageUrl: info.coverImage || null,
+          galleryImageUrls: info.galleryImages,
+          bgMusicUrl: info.bgMusic || null,
+        });
+
+        return {
+          url: `${window.location.origin}/#/preview?id=${invitationId}`,
+          hint: '已生成 Supabase 云端分享链接，可跨设备访问。'
+        };
+      } catch (cloudError) {
+        console.error('Failed to create Supabase share URL:', cloudError);
+      }
+    }
+
+    try {
+      const configData = await buildConfigShareUrl(payload);
+
+      if (configData.url.length <= MAX_SHARE_URL_LENGTH) {
+        return { url: configData.url, hint: configData.compressed ? '已优先生成压缩长链接，分享时更稳定。' : '' };
       }
 
-      const shortUrl = buildShortShareUrl(payload);
       return {
-        url: shortUrl,
-        hint: '当前请帖包含较大的本地图片或音频资源，已改用当前浏览器短码保存。该链接在本机可打开；如需跨设备稳定分享，需要接入云端存储。'
+        url: configData.url,
+        hint: configData.compressed
+          ? '已生成压缩长链接，但当前请帖资源较大，链接会比较长；如需更稳定的跨设备分享，建议后续接入云端存储。'
+          : '已按原始方式生成长链接，但当前请帖资源较大，链接会比较长；如需更稳定的跨设备分享，建议后续接入云端存储。'
       };
     } catch (error) {
-      console.error('Failed to generate share URL:', error);
-      toast.error('生成分享链接失败，请减少图片或音乐大小后重试');
+      console.error('Failed to generate local share URL:', error);
+      try {
+        const shortUrl = buildShortShareUrl(payload);
+        return {
+          url: shortUrl,
+          hint: '当前浏览器未能生成压缩长链接，已回退为本机短码链接。该链接仅在当前浏览器环境下可用。'
+        };
+      } catch {
+        toast.error('生成分享链接失败，请稍后重试');
+      }
       return null;
     }
   }, [info, activeTemplate]);
 
-  const handleShare = () => {
-    const shareData = generateShareUrl();
+  const handleShare = async () => {
+    const shareData = await generateShareUrl();
     if (!shareData) return;
     setShareUrl(shareData.url);
     setShareHint(shareData.hint);
@@ -1282,7 +1637,9 @@ const WeddingInvitationGenerator = () => {
 
     return (
       <>
-        {templateNode}
+        <div style={{ animation: 'invitationPageFlip 760ms cubic-bezier(0.22, 1, 0.36, 1) both', transformOrigin: 'top center' }}>
+          {templateNode}
+        </div>
         <StickerLayer
           stickers={info.stickers}
           editable
@@ -1297,6 +1654,7 @@ const WeddingInvitationGenerator = () => {
 
   return (
     <div className="min-h-screen" style={{ background: '#faf7f4' }}>
+      <InvitationMotionStyles />
       <header className="w-full" style={{ background: 'linear-gradient(135deg, #2c1810 0%, #4a1e28 100%)', borderBottom: '1px solid rgba(201,168,76,0.3)' }}>
         <div className="mx-auto flex items-center justify-between px-4 sm:px-8 py-3 sm:py-4" style={{ maxWidth: '1440px' }}>
           <div className="flex items-center gap-3">
@@ -1434,39 +1792,71 @@ const WeddingInvitationGenerator = () => {
                                 <textarea value={page.content || ''} onChange={(e) => updatePage(page.id, { content: e.target.value })} placeholder="请输入内容..." rows={3} className="w-full px-3 py-2 rounded-lg text-sm outline-none resize-none" style={{ background: '#fff', border: '1px solid #e8d5c4', color: '#2c1810' }} />
                               )}
                               {page.type === 'photo' && (
-                                <div>
-                                  <p className="text-xs mb-2" style={{ color: '#8b7355' }}>上传图片</p>
-                                  <div onClick={() => {
-                                    const input = document.createElement('input');
-                                    input.type = 'file';
-                                    input.accept = 'image/*';
-                                    input.onchange = (event: Event) => {
-                                      const file = getFileFromInputEvent(event);
-                                      if (file) {
-                                        const reader = new FileReader();
-                                        reader.onload = (event) => {
-                                          updatePage(page.id, { image: event.target?.result as string });
-                                        };
-                                        reader.readAsDataURL(file);
-                                      }
-                                    };
-                                    input.click();
-                                  }} className={`relative rounded-lg overflow-hidden cursor-pointer ${page.image ? '' : 'flex items-center justify-center'}`} style={{ aspectRatio: 4/3, background: page.image ? 'transparent' : '#fdf6f0', border: '2px dashed #e8d5c4' }}>
-                                    {page.image ? (
-                                      <img src={page.image} alt="页面图片" className="w-full h-full object-cover" />
-                                    ) : (
-                                      <Upload className="w-6 h-6" style={{ color: '#c9a84c' }} />
-                                    )}
+                                <div className="space-y-3">
+                                  <div>
+                                    <p className="text-xs mb-2" style={{ color: '#8b7355' }}>照片展示比例</p>
+                                    <select value={page.aspectRatio || '4 / 3'} onChange={(e) => updatePage(page.id, { aspectRatio: e.target.value })} className="w-full px-3 py-2 rounded-lg text-sm outline-none" style={{ background: '#fff', border: '1px solid #e8d5c4', color: '#2c1810' }}>
+                                      {aspectRatioOptions.map((option) => (
+                                        <option key={option.value} value={option.value}>{option.label}</option>
+                                      ))}
+                                    </select>
+                                  </div>
+                                  <div>
+                                    <p className="text-xs mb-2" style={{ color: '#8b7355' }}>上传图片</p>
+                                    <div onClick={() => {
+                                      const input = document.createElement('input');
+                                      input.type = 'file';
+                                      input.accept = 'image/*';
+                                      input.onchange = (event: Event) => {
+                                        const file = getFileFromInputEvent(event);
+                                        if (file) {
+                                          openImageCropper(
+                                            file,
+                                            async (croppedImage) => {
+                                              const uploadedImage = await uploadImageToCloudIfEnabled('pages', croppedImage, 'page-photo.jpg');
+                                              updatePage(page.id, { image: uploadedImage });
+                                            },
+                                            parseAspectRatio(page.aspectRatio) || 4 / 3
+                                          );
+                                        }
+                                      };
+                                      input.click();
+                                    }} className="cursor-pointer">
+                                      <PhotoFrame src={page.image || ''} alt="页面图片" aspectRatio={page.aspectRatio || '4 / 3'} roundedClassName="rounded-lg" imagePadding={2} />
+                                      {!page.image && (
+                                        <div className="mt-2 flex items-center justify-center gap-2 text-xs" style={{ color: '#8b7355' }}>
+                                          <Upload className="w-4 h-4" style={{ color: '#c9a84c' }} />
+                                          点击上传图片
+                                        </div>
+                                      )}
+                                    </div>
                                   </div>
                                 </div>
                               )}
                               {page.type === 'gallery' && (
-                                <div>
-                                  <p className="text-xs mb-2" style={{ color: '#8b7355' }}>上传相册图片</p>
+                                <div className="space-y-3">
+                                  <div className="grid grid-cols-2 gap-2">
+                                    <div>
+                                      <p className="text-xs mb-2" style={{ color: '#8b7355' }}>相册展示方式</p>
+                                      <select value={page.galleryMode || 'carousel'} onChange={(e) => updatePage(page.id, { galleryMode: e.target.value as PageModule['galleryMode'] })} className="w-full px-3 py-2 rounded-lg text-sm outline-none" style={{ background: '#fff', border: '1px solid #e8d5c4', color: '#2c1810' }}>
+                                        <option value="carousel">轮播切换</option>
+                                        <option value="grid">九宫格拼图</option>
+                                      </select>
+                                    </div>
+                                    <div>
+                                      <p className="text-xs mb-2" style={{ color: '#8b7355' }}>相框比例</p>
+                                      <select value={page.aspectRatio || '4 / 3'} onChange={(e) => updatePage(page.id, { aspectRatio: e.target.value })} className="w-full px-3 py-2 rounded-lg text-sm outline-none" style={{ background: '#fff', border: '1px solid #e8d5c4', color: '#2c1810' }}>
+                                        {aspectRatioOptions.map((option) => (
+                                          <option key={option.value} value={option.value}>{option.label}</option>
+                                        ))}
+                                      </select>
+                                    </div>
+                                  </div>
+                                  <p className="text-xs" style={{ color: '#8b7355' }}>上传相册图片</p>
                                   <div className="grid grid-cols-3 gap-2">
                                     {(page.images || []).map((img, i) => (
                                       <div key={i} className="relative aspect-square rounded-lg overflow-hidden">
-                                        <img src={img} alt={`图片 ${i + 1}`} className="w-full h-full object-cover" />
+                                        <img src={img} alt={`图片 ${i + 1}`} className="w-full h-full object-contain" style={{ background: '#fff8f4' }} />
                                         <button onClick={() => {
                                           const newImages = [...(page.images || [])];
                                           newImages.splice(i, 1);
@@ -1484,11 +1874,14 @@ const WeddingInvitationGenerator = () => {
                                         input.onchange = (event: Event) => {
                                           const file = getFileFromInputEvent(event);
                                           if (file) {
-                                            const reader = new FileReader();
-                                            reader.onload = (event) => {
-                                              updatePage(page.id, { images: [...(page.images || []), event.target?.result as string] });
-                                            };
-                                            reader.readAsDataURL(file);
+                                            openImageCropper(
+                                              file,
+                                              async (croppedImage) => {
+                                                const uploadedImage = await uploadImageToCloudIfEnabled('pages/gallery', croppedImage, 'page-gallery.jpg');
+                                                updatePage(page.id, { images: [...(page.images || []), uploadedImage] });
+                                              },
+                                              parseAspectRatio(page.aspectRatio) || 4 / 3
+                                            );
                                           }
                                         };
                                         input.click();
@@ -1497,6 +1890,19 @@ const WeddingInvitationGenerator = () => {
                                       </div>
                                     )}
                                   </div>
+                                  {!!(page.images || []).length && (
+                                    <div className="rounded-xl p-2" style={{ background: '#fff', border: '1px solid #e8d5c4' }}>
+                                      {page.galleryMode === 'carousel' ? (
+                                        <PhotoCarousel images={(page.images || []).slice(0, 6)} aspectRatio={page.aspectRatio || '4 / 3'} themeColor="#c4788a" />
+                                      ) : (
+                                        <div className="grid grid-cols-3 gap-2">
+                                          {(page.images || []).slice(0, 6).map((img, i) => (
+                                            <PhotoFrame key={i} src={img} alt={`预览 ${i + 1}`} aspectRatio={page.aspectRatio || '4 / 3'} />
+                                          ))}
+                                        </div>
+                                      )}
+                                    </div>
+                                  )}
                                 </div>
                               )}
                               <div className="flex items-center gap-2">
@@ -1546,9 +1952,9 @@ const WeddingInvitationGenerator = () => {
                     </select>
                   </div>
 
-                  <ImageUploader label="封面图片" value={info.coverImage} onChange={(v) => updateField('coverImage', v)} aspectRatio={4/3} />
+                  <ImageUploader label="封面图片" value={info.coverImage} onChange={(v) => updateField('coverImage', v)} aspectRatio={4/3} uploadHandler={handleCoverImageUpload} />
 
-                  <GalleryUploader label="相册照片" value={info.galleryImages} onChange={(v) => updateField('galleryImages', v)} maxImages={6} />
+                  <GalleryUploader label="相册照片" value={info.galleryImages} onChange={(v) => updateField('galleryImages', v)} maxImages={6} uploadHandler={handleGalleryImageUpload} />
 
                   <div>
                     <label className="text-xs font-semibold mb-2 block" style={{ color: '#8b7355' }}>主题风格</label>
@@ -1638,7 +2044,7 @@ const WeddingInvitationGenerator = () => {
                           <span className="text-xs" style={{ color: '#8b7355' }}>点击上传背景音乐 (MP3)</span>
                         </>
                       )}
-                      <input ref={musicInputRef} type="file" accept="audio/mpeg,.mp3" onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
+                      <input ref={musicInputRef} type="file" accept="audio/mpeg,.mp3" onChange={async (e: React.ChangeEvent<HTMLInputElement>) => {
                         const file = e.target.files?.[0];
                         if (file) {
                           if (file.size > 5 * 1024 * 1024) {
@@ -1646,13 +2052,17 @@ const WeddingInvitationGenerator = () => {
                             e.target.value = '';
                             return;
                           }
-                          const reader = new FileReader();
-                          reader.onload = (event) => {
-                            updateField('bgMusic', event.target?.result as string);
+                          try {
+                            const musicUrl = isSupabaseConfigured
+                              ? await uploadAudioFileToCloud(file)
+                              : await readFileAsDataUrl(file);
+                            updateField('bgMusic', musicUrl);
                             updateField('bgMusicName', file.name);
-                            toast.success('音乐上传成功');
-                          };
-                          reader.readAsDataURL(file);
+                            toast.success(isSupabaseConfigured ? '音乐已上传到 Supabase' : '音乐上传成功');
+                          } catch (error) {
+                            console.error('音乐上传失败:', error);
+                            toast.error(getUploadErrorMessage(error));
+                          }
                         }
                         e.target.value = '';
                       }} className="hidden" />
@@ -1824,6 +2234,24 @@ const WeddingInvitationGenerator = () => {
         shareHint={shareHint}
         onDownloadImage={handleDownloadImage}
       />
+
+      {pendingCropImage && (
+        <ImageCropper
+          imageSrc={pendingCropImage.imageSrc}
+          aspectRatio={pendingCropImage.aspectRatio}
+          onComplete={async (croppedImage) => {
+            try {
+              await pendingCropImage.onComplete(croppedImage);
+              setPendingCropImage(null);
+              toast.success('图片裁剪并上传成功');
+            } catch (error) {
+              console.error('裁剪图片上传失败:', error);
+              toast.error(getUploadErrorMessage(error));
+            }
+          }}
+          onCancel={() => setPendingCropImage(null)}
+        />
+      )}
 
       {showMapModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onClick={() => setShowMapModal(false)}>

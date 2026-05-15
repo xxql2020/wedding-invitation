@@ -5,6 +5,7 @@ import { toast } from 'sonner';
 import { QRCodeCanvas } from 'qrcode.react';
 import FallingPetals from '../components/FallingPetals';
 import '../components/FallingPetals.css';
+import { getInvitationFromCloud, isSupabaseConfigured } from '../lib/weddingCloud';
 
 export interface PageModule {
   id: string;
@@ -15,6 +16,8 @@ export interface PageModule {
   images?: string[];
   font?: string;
   backgroundColor?: string;
+  aspectRatio?: string;
+  galleryMode?: 'carousel' | 'grid';
 }
 
 export interface WeddingInfo {
@@ -66,11 +69,216 @@ const fonts = [
   { id: 'sans', name: '现代无衬线', family: "'Noto Sans SC', sans-serif" },
 ];
 
+const normalizePages = (pages: PageModule[] | undefined): PageModule[] => {
+  if (!Array.isArray(pages)) return [];
+
+  return pages.map((page) => ({
+    ...page,
+    images: Array.isArray(page.images) ? page.images : [],
+    aspectRatio: page.aspectRatio || '4 / 3',
+    galleryMode: page.galleryMode || (page.type === 'gallery' ? 'carousel' : undefined)
+  }));
+};
+
+const decodeBase64Url = (value: string): string => {
+  const normalized = value.replace(/-/g, '+').replace(/_/g, '/');
+  const padding = normalized.length % 4 === 0 ? '' : '='.repeat(4 - (normalized.length % 4));
+  return normalized + padding;
+};
+
+const parseCompressedPayload = async (value: string): Promise<SharePayload | WeddingInfo> => {
+  if (typeof window === 'undefined' || typeof window.DecompressionStream === 'undefined') {
+    throw new Error('Compressed share links are not supported in this browser.');
+  }
+
+  const binary = atob(decodeBase64Url(value));
+  const bytes = Uint8Array.from(binary, (char) => char.charCodeAt(0));
+  const decompressedStream = new Blob([bytes]).stream().pipeThrough(new window.DecompressionStream('gzip'));
+  const json = await new Response(decompressedStream).text();
+  return JSON.parse(json) as SharePayload | WeddingInfo;
+};
+
 const stickerEmojiMap: Record<StickerType, string> = {
   rose: '🌹',
   heart: '💖',
   bell: '🔔',
   fireworks: '🎆'
+};
+
+const invitationMotionStyles = `
+  @keyframes invitationPageFlip {
+    0% {
+      opacity: 0;
+      transform: perspective(1200px) rotateX(-12deg) translateY(28px) scale(0.98);
+    }
+    100% {
+      opacity: 1;
+      transform: perspective(1200px) rotateX(0deg) translateY(0) scale(1);
+    }
+  }
+
+  @keyframes invitationImageZoom {
+    0% {
+      transform: scale(1);
+    }
+    100% {
+      transform: scale(1.08);
+    }
+  }
+
+  @keyframes invitationCarouselSlide {
+    0% {
+      opacity: 0;
+      transform: translateX(22px) scale(0.98);
+    }
+    100% {
+      opacity: 1;
+      transform: translateX(0) scale(1);
+    }
+  }
+`;
+
+const InvitationMotionStyles = () => <style>{invitationMotionStyles}</style>;
+
+const PhotoBackdrop = ({
+  src,
+  alt,
+  opacity = 0.14,
+  blur = 0,
+}: {
+  src: string;
+  alt: string;
+  opacity?: number;
+  blur?: number;
+}) => (
+  <div className="absolute inset-0 overflow-hidden">
+    <img
+      src={src}
+      alt={alt}
+      className="w-full h-full object-cover scale-105"
+      style={{ opacity: Math.min(opacity + 0.08, 0.3), filter: `blur(${Math.max(blur, 12)}px)` }}
+    />
+    <div className="absolute inset-0" style={{ background: 'rgba(255,255,255,0.1)' }} />
+    <img
+      src={src}
+      alt={alt}
+      className="absolute inset-0 w-full h-full object-contain"
+      style={{ opacity, filter: blur ? `blur(${blur}px)` : 'none', animation: 'invitationImageZoom 12s ease-in-out infinite alternate' }}
+    />
+  </div>
+);
+
+const PhotoFrame = ({
+  src,
+  alt,
+  aspectRatio = '1 / 1',
+  roundedClassName = 'rounded-lg',
+  borderStyle,
+  imagePadding = 4,
+  animationDelay = '0ms'
+}: {
+  src: string;
+  alt: string;
+  aspectRatio?: string;
+  roundedClassName?: string;
+  borderStyle?: React.CSSProperties;
+  imagePadding?: number;
+  animationDelay?: string;
+}) => (
+  <div
+    className={`relative overflow-hidden ${roundedClassName}`}
+    style={{
+      aspectRatio,
+      background: 'linear-gradient(180deg, rgba(255,255,255,0.92) 0%, rgba(248,241,235,0.98) 100%)',
+      boxShadow: '0 12px 26px rgba(60, 38, 24, 0.08)',
+      ...borderStyle
+    }}
+  >
+    {!src ? (
+      <div className="absolute inset-0 flex items-center justify-center text-xs tracking-[0.2em] uppercase" style={{ color: '#b8a898' }}>
+        Wedding Photo
+      </div>
+    ) : (
+      <>
+        <img
+          src={src}
+          alt={alt}
+          className="absolute inset-0 w-full h-full object-cover scale-110"
+          style={{ filter: 'blur(18px)', opacity: 0.22 }}
+        />
+        <div className="absolute inset-0" style={{ background: 'linear-gradient(180deg, rgba(255,255,255,0.1), rgba(255,255,255,0.35))' }} />
+        <div className="absolute inset-0 flex items-center justify-center" style={{ padding: `${imagePadding}px` }}>
+          <img
+            src={src}
+            alt={alt}
+            className="w-full h-full object-contain"
+            style={{ animation: `invitationImageZoom 10s ease-in-out ${animationDelay} infinite alternate`, transformOrigin: 'center center' }}
+          />
+        </div>
+      </>
+    )}
+  </div>
+);
+
+const PhotoCarousel = ({
+  images,
+  aspectRatio = '4 / 3',
+  themeColor,
+  roundedClassName = 'rounded-xl'
+}: {
+  images: string[];
+  aspectRatio?: string;
+  themeColor: string;
+  roundedClassName?: string;
+}) => {
+  const safeImages = images.filter(Boolean);
+  const [currentIndex, setCurrentIndex] = useState(0);
+  const activeIndex = safeImages.length === 0 ? 0 : currentIndex % safeImages.length;
+
+  useEffect(() => {
+    if (safeImages.length <= 1) return;
+
+    const timer = window.setInterval(() => {
+      setCurrentIndex((prev) => (prev + 1) % safeImages.length);
+    }, 3200);
+
+    return () => window.clearInterval(timer);
+  }, [safeImages.length]);
+
+  if (safeImages.length === 0) {
+    return <PhotoFrame src="" alt="相册" aspectRatio={aspectRatio} roundedClassName={roundedClassName} />;
+  }
+
+  return (
+    <div className="space-y-3">
+      <div key={`${safeImages[activeIndex]}-${activeIndex}`} style={{ animation: 'invitationCarouselSlide 520ms ease both' }}>
+        <PhotoFrame
+          src={safeImages[activeIndex]}
+          alt={`相册 ${activeIndex + 1}`}
+          aspectRatio={aspectRatio}
+          roundedClassName={roundedClassName}
+          imagePadding={4}
+        />
+      </div>
+      {safeImages.length > 1 && (
+        <div className="flex items-center justify-center gap-2">
+          {safeImages.map((_, index) => (
+            <button
+              key={index}
+              type="button"
+              onClick={() => setCurrentIndex(index)}
+              className="h-2.5 rounded-full transition-all"
+              style={{
+                width: activeIndex === index ? '22px' : '8px',
+                background: activeIndex === index ? themeColor : `${themeColor}33`
+              }}
+              aria-label={`切换到第 ${index + 1} 张`}
+            />
+          ))}
+        </div>
+      )}
+    </div>
+  );
 };
 
 const normalizeWeddingInfo = (data: Partial<WeddingInfo>): WeddingInfo => ({
@@ -87,7 +295,7 @@ const normalizeWeddingInfo = (data: Partial<WeddingInfo>): WeddingInfo => ({
   message: data.message || '',
   coverImage: data.coverImage || '',
   galleryImages: Array.isArray(data.galleryImages) ? data.galleryImages : [],
-  pages: Array.isArray(data.pages) ? data.pages : [],
+  pages: normalizePages(data.pages),
   defaultFont: data.defaultFont || 'cormorant',
   template: data.template || 'romantic',
   bgMusic: data.bgMusic || '',
@@ -281,6 +489,8 @@ const openMapChooser = (address: string, lat: number = 0, lng: number = 0) => {
 
 const PageModuleRenderer = ({ page, defaultFont, themeColor }) => {
   const font = fonts.find(f => f.id === (page.font || defaultFont)) || fonts[0];
+  const pageAspectRatio = page.aspectRatio || '4 / 3';
+  const galleryMode = page.galleryMode || 'carousel';
   
   const renderContent = () => {
     switch (page.type) {
@@ -288,13 +498,15 @@ const PageModuleRenderer = ({ page, defaultFont, themeColor }) => {
         return (
           <div className="py-6 px-8">
             <p className="text-xs tracking-[0.3em] uppercase mb-4 text-center" style={{ color: themeColor, fontFamily: font.family }}>{page.title}</p>
-            <div className="grid grid-cols-3 gap-2">
-              {(page.images || []).slice(0, 6).map((img, i) => (
-                <div key={i} className="aspect-square rounded-lg overflow-hidden">
-                  <img src={img} alt={`相册 ${i + 1}`} className="w-full h-full object-cover" />
-                </div>
-              ))}
-            </div>
+            {galleryMode === 'carousel' ? (
+              <PhotoCarousel images={(page.images || []).slice(0, 6)} aspectRatio={pageAspectRatio} themeColor={themeColor} />
+            ) : (
+              <div className="grid grid-cols-3 gap-2">
+                {(page.images || []).slice(0, 6).map((img, i) => (
+                  <PhotoFrame key={i} src={img} alt={`相册 ${i + 1}`} aspectRatio={pageAspectRatio} animationDelay={`${i * 150}ms`} />
+                ))}
+              </div>
+            )}
           </div>
         );
         
@@ -318,15 +530,13 @@ const PageModuleRenderer = ({ page, defaultFont, themeColor }) => {
         
       case 'photo':
         return (
-          <div className="py-4 px-6">
-            <div className="rounded-lg overflow-hidden" style={{ aspectRatio: 4/3 }}>
-              <img src={page.image} alt={page.title} className="w-full h-full object-cover" />
-            </div>
+          <div className="py-4">
+            <PhotoFrame src={page.image || ''} alt={page.title} aspectRatio={pageAspectRatio} roundedClassName="rounded-none" imagePadding={0} />
             {page.title && (
-              <p className="text-xs tracking-[0.2em] uppercase mt-3 text-center" style={{ color: themeColor, fontFamily: font.family }}>{page.title}</p>
+              <p className="text-xs tracking-[0.2em] uppercase mt-3 text-center px-6" style={{ color: themeColor, fontFamily: font.family }}>{page.title}</p>
             )}
             {page.content && (
-              <p className="text-xs text-center mt-1" style={{ color: '#6b4c3b', fontFamily: font.family }}>{page.content}</p>
+              <p className="text-xs text-center mt-1 px-6" style={{ color: '#6b4c3b', fontFamily: font.family }}>{page.content}</p>
             )}
           </div>
         );
@@ -337,7 +547,7 @@ const PageModuleRenderer = ({ page, defaultFont, themeColor }) => {
   };
 
   return (
-    <div className="">
+    <div style={{ animation: 'invitationPageFlip 720ms cubic-bezier(0.22, 1, 0.36, 1) both' }}>
       {renderContent()}
     </div>
   );
@@ -384,7 +594,7 @@ const TemplateRomantic = ({ info }) => {
 
   return (
     <div className="relative w-full overflow-hidden" style={{ background: 'linear-gradient(135deg, #fdf0f0 0%, #fff8f4 40%, #fdf0e8 100%)', minHeight: '700px', fontFamily: defaultFont.family }}>
-      {info.coverImage && <div className="absolute inset-0"><img src={info.coverImage} alt="封面" className="w-full h-full object-cover" style={{ opacity: 0.15 }} /></div>}
+      {info.coverImage && <PhotoBackdrop src={info.coverImage} alt="封面" opacity={0.14} />}
       
       <div className="absolute top-0 left-0 right-0 h-1" style={{ background: `linear-gradient(90deg, transparent, ${themeColor}, ${accentColor}, ${themeColor}, transparent)` }} />
       <div className="absolute bottom-0 left-0 right-0 h-1" style={{ background: `linear-gradient(90deg, transparent, ${themeColor}, ${accentColor}, ${themeColor}, transparent)` }} />
@@ -430,7 +640,7 @@ const TemplateRomantic = ({ info }) => {
             <p className="text-xs tracking-widest uppercase mb-2" style={{ color: themeColor }}>甜蜜瞬间</p>
             <div className="grid grid-cols-3 gap-2">
               {info.galleryImages.slice(0, 3).map((img, i) => (
-                <div key={i} className="aspect-square rounded-lg overflow-hidden"><img src={img} alt={`相册 ${i + 1}`} className="w-full h-full object-cover" /></div>
+                <PhotoFrame key={i} src={img} alt={`相册 ${i + 1}`} aspectRatio="1 / 1" animationDelay={`${i * 180}ms`} />
               ))}
             </div>
           </div>
@@ -460,7 +670,7 @@ const TemplateClassic = ({ info }) => {
 
   return (
     <div className="relative w-full overflow-hidden" style={{ background: '#1a0a00', minHeight: '700px', fontFamily: defaultFont.family }}>
-      {info.coverImage && <div className="absolute inset-0"><img src={info.coverImage} alt="封面" className="w-full h-full object-cover" style={{ opacity: 0.2 }} /></div>}
+      {info.coverImage && <PhotoBackdrop src={info.coverImage} alt="封面" opacity={0.18} />}
       
       <div className="absolute inset-3" style={{ border: `1px solid ${themeColor}80` }} />
       <div className="absolute inset-5" style={{ border: `1px solid ${themeColor}40` }} />
@@ -501,7 +711,7 @@ const TemplateClassic = ({ info }) => {
         {info.galleryImages && info.galleryImages.length > 0 && (
           <div className="w-full max-w-xs mt-4 grid grid-cols-3 gap-2">
             {info.galleryImages.slice(0, 3).map((img, i) => (
-              <div key={i} className="aspect-square rounded-lg overflow-hidden"><img src={img} alt={`相册 ${i + 1}`} className="w-full h-full object-cover" /></div>
+              <PhotoFrame key={i} src={img} alt={`相册 ${i + 1}`} aspectRatio="1 / 1" animationDelay={`${i * 180}ms`} />
             ))}
           </div>
         )}
@@ -530,7 +740,7 @@ const TemplateModern = ({ info }) => {
 
   return (
     <div className="relative w-full overflow-hidden" style={{ background: '#f8f5f0', minHeight: '700px', fontFamily: defaultFont.family }}>
-      {info.coverImage && <div className="absolute inset-0"><img src={info.coverImage} alt="封面" className="w-full h-full object-cover" style={{ opacity: 0.1 }} /></div>}
+      {info.coverImage && <PhotoBackdrop src={info.coverImage} alt="封面" opacity={0.1} />}
       
       <div className="absolute left-0 top-0 bottom-0 w-2" style={{ background: `linear-gradient(180deg, ${themeColor}, ${accentColor}, #c9a84c)` }} />
 
@@ -574,7 +784,9 @@ const TemplateModern = ({ info }) => {
         {info.galleryImages && info.galleryImages.length > 0 && (
           <div className="flex gap-2 mt-4">
             {info.galleryImages.slice(0, 3).map((img, i) => (
-              <div key={i} className="w-16 h-16 rounded-lg overflow-hidden"><img src={img} alt={`相册 ${i + 1}`} className="w-full h-full object-cover" /></div>
+              <div key={i} className="w-16">
+                <PhotoFrame src={img} alt={`相册 ${i + 1}`} aspectRatio="1 / 1" animationDelay={`${i * 180}ms`} />
+              </div>
             ))}
           </div>
         )}
@@ -605,7 +817,7 @@ const TemplateChinese = ({ info }) => {
 
   return (
     <div className="relative w-full overflow-hidden" style={{ background: 'linear-gradient(160deg, #8b0000 0%, #6b0000 50%, #4a0000 100%)', minHeight: '700px', fontFamily: defaultFont.family }}>
-      {info.coverImage && <div className="absolute inset-0"><img src={info.coverImage} alt="封面" className="w-full h-full object-cover" style={{ opacity: 0.15 }} /></div>}
+      {info.coverImage && <PhotoBackdrop src={info.coverImage} alt="封面" opacity={0.14} />}
       
       <div className="absolute inset-4" style={{ border: `2px solid ${themeColor}66`, borderRadius: '4px' }} />
       <div className="absolute inset-6" style={{ border: `1px solid ${themeColor}33`, borderRadius: '2px' }} />
@@ -657,7 +869,9 @@ const TemplateChinese = ({ info }) => {
         {info.galleryImages && info.galleryImages.length > 0 && (
           <div className="flex gap-2 mt-4 justify-center">
             {info.galleryImages.slice(0, 3).map((img, i) => (
-              <div key={i} className="w-16 h-16 rounded-lg overflow-hidden" style={{ border: `2px solid ${themeColor}66` }}><img src={img} alt={`相册 ${i + 1}`} className="w-full h-full object-cover" /></div>
+              <div key={i} className="w-16">
+                <PhotoFrame src={img} alt={`相册 ${i + 1}`} aspectRatio="1 / 1" borderStyle={{ border: `2px solid ${themeColor}66` }} animationDelay={`${i * 180}ms`} />
+              </div>
             ))}
           </div>
         )}
@@ -687,7 +901,7 @@ const TemplateKorean = ({ info }) => {
 
   return (
     <div className="relative w-full overflow-hidden" style={{ background: 'linear-gradient(180deg, #f7f2ed 0%, #fdfaf7 55%, #f4ede6 100%)', minHeight: '700px', fontFamily: defaultFont.family }}>
-      {info.coverImage && <div className="absolute inset-0"><img src={info.coverImage} alt="封面" className="w-full h-full object-cover" style={{ opacity: 0.08, filter: 'blur(2px)' }} /></div>}
+      {info.coverImage && <PhotoBackdrop src={info.coverImage} alt="封面" opacity={0.08} blur={2} />}
 
       <div className="absolute top-6 left-6 right-6 bottom-6 rounded-[32px]" style={{ border: `1px solid ${themeColor}40`, background: 'rgba(255,255,255,0.35)' }} />
 
@@ -724,9 +938,7 @@ const TemplateKorean = ({ info }) => {
           <div className="w-full max-w-sm mt-5">
             <div className="grid grid-cols-3 gap-2">
               {info.galleryImages.slice(0, 3).map((img, i) => (
-                <div key={i} className="aspect-[3/4] rounded-[18px] overflow-hidden shadow-sm">
-                  <img src={img} alt={`相册 ${i + 1}`} className="w-full h-full object-cover" />
-                </div>
+                <PhotoFrame key={i} src={img} alt={`相册 ${i + 1}`} aspectRatio="3 / 4" roundedClassName="rounded-[18px]" animationDelay={`${i * 180}ms`} />
               ))}
             </div>
           </div>
@@ -763,59 +975,87 @@ const WeddingPreview = () => {
   }, []);
 
   useEffect(() => {
-    const loadData = () => {
+    let cancelled = false;
+
+    const applyDecodedData = (decoded: SharePayload | WeddingInfo) => {
+      if (cancelled) return;
+
+      if ('info' in decoded && decoded.info) {
+        setInfo(normalizeWeddingInfo(decoded.info));
+        if (decoded.template) {
+          setTemplate(decoded.template);
+        }
+      } else if ('template' in decoded && decoded.template) {
+        setTemplate(decoded.template);
+        const { template: _template, ...infoData } = decoded;
+        setInfo(normalizeWeddingInfo(infoData as Partial<WeddingInfo>));
+      } else {
+        setInfo(normalizeWeddingInfo(decoded as Partial<WeddingInfo>));
+      }
+    };
+
+    const loadData = async () => {
       // 从 hash 中提取参数，因为使用的是 HashRouter
       const hashParams = window.location.hash.slice(1).split('?');
       const params = new URLSearchParams(hashParams[1] || '');
       
       const shortCode = params.get('short');
+      const invitationId = params.get('id');
+      const compressedConfigParam = params.get('configz');
       const configParam = params.get('config');
 
-      if (shortCode) {
+      if (invitationId) {
+        if (!isSupabaseConfigured) {
+          setError('当前环境未配置 Supabase，无法读取云端请帖');
+        } else {
+          try {
+            const invitation = await getInvitationFromCloud(invitationId);
+            if (invitation.template) {
+              setTemplate(invitation.template);
+            }
+            applyDecodedData(invitation.payload as SharePayload | WeddingInfo);
+          } catch (e) {
+            setError('无法加载云端请帖数据');
+          }
+        }
+      } else if (shortCode) {
         const stored = localStorage.getItem(`wedding_short_${shortCode}`);
         if (stored) {
           try {
             const parsed = JSON.parse(stored);
-            // 正确处理存储的数据结构 { info, template, createdAt }
-            if (parsed.info) {
-              setInfo(normalizeWeddingInfo(parsed.info));
-              if (parsed.template) {
-                setTemplate(parsed.template);
-              }
-            } else {
-              setInfo(normalizeWeddingInfo(parsed));
-            }
+            applyDecodedData(parsed);
           } catch (e) {
             setError('无法加载请帖数据');
           }
         } else {
           setError('请帖不存在或已过期');
         }
+      } else if (compressedConfigParam) {
+        try {
+          const decoded = await parseCompressedPayload(compressedConfigParam);
+          applyDecodedData(decoded);
+        } catch (e) {
+          setError('无法解析压缩请帖链接');
+        }
       } else if (configParam) {
         try {
           const decoded = JSON.parse(decodeURIComponent(atob(configParam))) as SharePayload | WeddingInfo;
-          if ('info' in decoded && decoded.info) {
-            setInfo(normalizeWeddingInfo(decoded.info));
-            if (decoded.template) {
-              setTemplate(decoded.template);
-            }
-          } else if ('template' in decoded && decoded.template) {
-            setTemplate(decoded.template);
-            const { template: _template, ...infoData } = decoded;
-            setInfo(normalizeWeddingInfo(infoData as Partial<WeddingInfo>));
-          } else {
-            setInfo(normalizeWeddingInfo(decoded as Partial<WeddingInfo>));
-          }
+          applyDecodedData(decoded);
         } catch (e) {
           setError('无法解析请帖链接');
         }
       } else {
         setError('无效的请帖链接');
       }
-      setLoading(false);
+      if (!cancelled) {
+        setLoading(false);
+      }
     };
 
     loadData();
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   useEffect(() => {
@@ -975,7 +1215,9 @@ const WeddingPreview = () => {
 
     return (
       <>
-        {templateNode}
+        <div style={{ animation: 'invitationPageFlip 760ms cubic-bezier(0.22, 1, 0.36, 1) both', transformOrigin: 'top center' }}>
+          {templateNode}
+        </div>
         <StickerLayer stickers={info.stickers || []} />
       </>
     );
@@ -983,6 +1225,7 @@ const WeddingPreview = () => {
 
   return (
     <div className="min-h-screen" style={{ background: '#f5f5f5' }}>
+      <InvitationMotionStyles />
       <FallingPetals enabled={info?.petalsEnabled || false} />
       {info?.bgMusic && (
         <audio ref={audioRef} src={info.bgMusic} loop preload="auto" />
