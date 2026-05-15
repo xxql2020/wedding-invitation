@@ -81,12 +81,6 @@ const normalizePages = (pages: PageModule[] | undefined): PageModule[] => {
   }));
 };
 
-const decodeBase64Url = (value: string): string => {
-  const normalized = value.replace(/-/g, '+').replace(/_/g, '/');
-  const padding = normalized.length % 4 === 0 ? '' : '='.repeat(4 - (normalized.length % 4));
-  return normalized + padding;
-};
-
 const legacyCopyText = (text: string): boolean => {
   try {
     const textarea = document.createElement('textarea');
@@ -141,18 +135,6 @@ const copyText = async (text: string): Promise<boolean> => {
   }
 
   return legacyCopyText(text);
-};
-
-const parseCompressedPayload = async (value: string): Promise<SharePayload | WeddingInfo> => {
-  if (typeof window === 'undefined' || typeof window.DecompressionStream === 'undefined') {
-    throw new Error('Compressed share links are not supported in this browser.');
-  }
-
-  const binary = atob(decodeBase64Url(value));
-  const bytes = Uint8Array.from(binary, (char) => char.charCodeAt(0));
-  const decompressedStream = new Blob([bytes]).stream().pipeThrough(new window.DecompressionStream('gzip'));
-  const json = await new Response(decompressedStream).text();
-  return JSON.parse(json) as SharePayload | WeddingInfo;
 };
 
 const invitationMotionStyles = `
@@ -1055,8 +1037,7 @@ const WeddingPreview = () => {
       
       const shortCode = params.get('short');
       const invitationId = params.get('id');
-      const compressedConfigParam = params.get('configz');
-      const configParam = params.get('config');
+      const hasLegacyConfigLink = params.has('configz') || params.has('config');
 
       if (invitationId) {
         if (!isSupabaseConfigured) {
@@ -1084,20 +1065,8 @@ const WeddingPreview = () => {
         } else {
           setError('请帖不存在或已过期');
         }
-      } else if (compressedConfigParam) {
-        try {
-          const decoded = await parseCompressedPayload(compressedConfigParam);
-          applyDecodedData(decoded);
-        } catch (e) {
-          setError('无法解析压缩请帖链接');
-        }
-      } else if (configParam) {
-        try {
-          const decoded = JSON.parse(decodeURIComponent(atob(configParam))) as SharePayload | WeddingInfo;
-          applyDecodedData(decoded);
-        } catch (e) {
-          setError('无法解析请帖链接');
-        }
+      } else if (hasLegacyConfigLink) {
+        setError('当前已停用长链接，请重新生成短链接');
       } else {
         setError('无效的请帖链接');
       }

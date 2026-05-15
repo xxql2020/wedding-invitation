@@ -73,7 +73,6 @@ interface AmapSearchResponse {
 
 const DEFAULT_TEMPLATE = 'romantic';
 const LOCAL_SHARE_PREFIX = 'wedding_short_';
-const MAX_SHARE_URL_LENGTH = 1800;
 
 const DEFAULT_WEDDING_INFO: WeddingInfo = {
   groomName: '',
@@ -145,52 +144,6 @@ const buildSharePayload = (info: WeddingInfo, template: string): SharePayload =>
   template,
   createdAt: Date.now()
 });
-
-const encodeBase64Url = (value: string): string => {
-  return value.replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/g, '');
-};
-
-const decodeBase64Url = (value: string): string => {
-  const normalized = value.replace(/-/g, '+').replace(/_/g, '/');
-  const padding = normalized.length % 4 === 0 ? '' : '='.repeat(4 - (normalized.length % 4));
-  return normalized + padding;
-};
-
-const bytesToBase64Url = (bytes: Uint8Array): string => {
-  let binary = '';
-  const chunkSize = 0x8000;
-  for (let i = 0; i < bytes.length; i += chunkSize) {
-    binary += String.fromCharCode(...bytes.subarray(i, i + chunkSize));
-  }
-  return encodeBase64Url(btoa(binary));
-};
-
-const compressPayload = async (payload: SharePayload): Promise<string | null> => {
-  if (typeof window === 'undefined' || typeof window.CompressionStream === 'undefined') {
-    return null;
-  }
-
-  const json = JSON.stringify(payload);
-  const compressedStream = new Blob([json]).stream().pipeThrough(new window.CompressionStream('gzip'));
-  const compressedBuffer = await new Response(compressedStream).arrayBuffer();
-  return bytesToBase64Url(new Uint8Array(compressedBuffer));
-};
-
-const buildConfigShareUrl = async (payload: SharePayload): Promise<{ url: string; compressed: boolean }> => {
-  const compressed = await compressPayload(payload);
-  if (compressed) {
-    return {
-      url: `${window.location.origin}/#/preview?configz=${compressed}`,
-      compressed: true
-    };
-  }
-
-  const encoded = btoa(encodeURIComponent(JSON.stringify(payload)));
-  return {
-    url: `${window.location.origin}/#/preview?config=${encoded}`,
-    compressed: false
-  };
-};
 
 const createShortCode = (): string => {
   if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
@@ -1615,29 +1568,14 @@ const WeddingInvitationGenerator = () => {
     const payload = buildSharePayload(shareInfo, activeTemplate);
 
     try {
-      const configData = await buildConfigShareUrl(payload);
-
-      if (configData.url.length <= MAX_SHARE_URL_LENGTH) {
-        return { url: configData.url, hint: configData.compressed ? '已优先生成压缩长链接，分享时更稳定。' : '' };
-      }
-
+      const shortUrl = buildShortShareUrl(payload);
       return {
-        url: configData.url,
-        hint: configData.compressed
-          ? '已生成压缩长链接，但当前请帖资源较大，链接会比较长；如需更稳定的跨设备分享，建议后续接入云端存储。'
-          : '已按原始方式生成长链接，但当前请帖资源较大，链接会比较长；如需更稳定的跨设备分享，建议后续接入云端存储。'
+        url: shortUrl,
+        hint: '当前环境未配置 Supabase，已生成本机短码链接。该链接仅在当前浏览器环境下可用。'
       };
     } catch (error) {
-      console.error('Failed to generate local share URL:', error);
-      try {
-        const shortUrl = buildShortShareUrl(payload);
-        return {
-          url: shortUrl,
-          hint: '当前浏览器未能生成压缩长链接，已回退为本机短码链接。该链接仅在当前浏览器环境下可用。'
-        };
-      } catch {
-        toast.error('生成分享链接失败，请稍后重试');
-      }
+      console.error('Failed to generate local short share URL:', error);
+      toast.error('生成短链接失败，请稍后重试');
       return null;
     }
   }, [info, activeTemplate]);
