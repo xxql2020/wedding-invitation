@@ -345,7 +345,7 @@ const PhotoFrame = ({
   aspectRatio = '1 / 1',
   roundedClassName = 'rounded-lg',
   borderStyle,
-  imagePadding = 4,
+  imagePadding = 0,
   animationDelay = '0ms'
 }: {
   src: string;
@@ -360,7 +360,7 @@ const PhotoFrame = ({
     className={`relative overflow-hidden ${roundedClassName}`}
     style={{
       aspectRatio,
-      background: 'linear-gradient(180deg, rgba(255,255,255,0.92) 0%, rgba(248,241,235,0.98) 100%)',
+      background: 'transparent',
       boxShadow: '0 12px 26px rgba(60, 38, 24, 0.08)',
       ...borderStyle
     }}
@@ -377,7 +377,6 @@ const PhotoFrame = ({
       className="absolute inset-0 w-full h-full object-cover scale-110"
       style={{ filter: 'blur(18px)', opacity: 0.22 }}
     />
-    <div className="absolute inset-0" style={{ background: 'linear-gradient(180deg, rgba(255,255,255,0.1), rgba(255,255,255,0.35))' }} />
     <div className="absolute inset-0 flex items-center justify-center" style={{ padding: `${imagePadding}px` }}>
       <img
         src={src}
@@ -470,6 +469,24 @@ const weddingMessages = [
   { id: '8', text: '携手并进，共赴未来，感谢您的支持与陪伴' },
   { id: '9', text: '在这值得纪念的日子，感谢您的到来与祝福' },
   { id: '10', text: '愿这份喜悦传递给每一位亲爱的家人朋友' },
+];
+
+const quoteList = [
+  { id: '1', text: '爱是恒久忍耐，又有恩慈' },
+  { id: '2', text: '愿得一人心，白首不相离' },
+  { id: '3', text: '执子之手，与子偕老' },
+  { id: '4', text: '一生一世一双人，半醉半醒半浮生' },
+  { id: '5', text: '遇见你，是我生命中最美的意外' },
+  { id: '6', text: '爱你，是我做过最正确的决定' },
+  { id: '7', text: '你是我生命中的阳光，照亮我前行的路' },
+  { id: '8', text: '岁月静好，与君语；细水流年，与君同' },
+  { id: '9', text: '愿我们的爱情，如初见般美好' },
+  { id: '10', text: '你若不离不弃，我必生死相依' },
+  { id: '11', text: '在天愿作比翼鸟，在地愿为连理枝' },
+  { id: '12', text: '两情若是久长时，又岂在朝朝暮暮' },
+  { id: '13', text: '死生契阔，与子成说。执子之手，与子偕老' },
+  { id: '14', text: '身无彩凤双飞翼，心有灵犀一点通' },
+  { id: '15', text: '衣带渐宽终不悔，为伊消得人憔悴' },
 ];
 
 const generateMapLink = (address: string): string => {
@@ -809,7 +826,7 @@ const PageModuleRenderer = ({ page, defaultFont, themeColor }) => {
   };
 
   return (
-    <div style={{ animation: 'invitationPageFlip 720ms cubic-bezier(0.22, 1, 0.36, 1) both' }}>
+    <div className="w-full self-stretch" style={{ animation: 'invitationPageFlip 720ms cubic-bezier(0.22, 1, 0.36, 1) both' }}>
       {renderContent()}
     </div>
   );
@@ -1738,7 +1755,24 @@ const WeddingInvitationGenerator = () => {
                             <div className="p-2.5 sm:p-3 space-y-2.5 sm:space-y-3">
                               <input type="text" value={page.title} onChange={(e) => updatePage(page.id, { title: e.target.value })} placeholder="页面标题" className="w-full px-3 py-2 rounded-lg text-sm outline-none" style={{ background: '#fff', border: '1px solid #e8d5c4', color: '#2c1810' }} />
                               {(page.type === 'story' || page.type === 'quote') && (
-                                <textarea value={page.content || ''} onChange={(e) => updatePage(page.id, { content: e.target.value })} placeholder="请输入内容..." rows={3} className="w-full px-3 py-2 rounded-lg text-sm outline-none resize-none" style={{ background: '#fff', border: '1px solid #e8d5c4', color: '#2c1810' }} />
+                                <>
+                                  {page.type === 'quote' && (
+                                    <div>
+                                      <p className="text-xs mb-2" style={{ color: '#8b7355' }}>选择语录</p>
+                                      <select onChange={(e) => {
+                                        if (e.target.value) {
+                                          updatePage(page.id, { content: e.target.value });
+                                        }
+                                      }} className="w-full px-3 py-2 rounded-lg text-sm outline-none" style={{ background: '#fff', border: '1px solid #e8d5c4', color: '#2c1810' }}>
+                                        <option value="">请选择语录...</option>
+                                        {quoteList.map((quote) => (
+                                          <option key={quote.id} value={quote.text}>{quote.text}</option>
+                                        ))}
+                                      </select>
+                                    </div>
+                                  )}
+                                  <textarea value={page.content || ''} onChange={(e) => updatePage(page.id, { content: e.target.value })} placeholder="请输入内容..." rows={3} className="w-full px-3 py-2 rounded-lg text-sm outline-none resize-none" style={{ background: '#fff', border: '1px solid #e8d5c4', color: '#2c1810' }} />
+                                </>
                               )}
                               {page.type === 'photo' && (
                                 <div className="space-y-3">

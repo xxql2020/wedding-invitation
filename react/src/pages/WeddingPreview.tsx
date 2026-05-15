@@ -230,7 +230,7 @@ const PhotoFrame = ({
   aspectRatio = '1 / 1',
   roundedClassName = 'rounded-lg',
   borderStyle,
-  imagePadding = 4,
+  imagePadding = 0,
   animationDelay = '0ms'
 }: {
   src: string;
@@ -245,7 +245,7 @@ const PhotoFrame = ({
     className={`relative overflow-hidden ${roundedClassName}`}
     style={{
       aspectRatio,
-      background: 'linear-gradient(180deg, rgba(255,255,255,0.92) 0%, rgba(248,241,235,0.98) 100%)',
+      background: 'transparent',
       boxShadow: '0 12px 26px rgba(60, 38, 24, 0.08)',
       ...borderStyle
     }}
@@ -262,7 +262,6 @@ const PhotoFrame = ({
           className="absolute inset-0 w-full h-full object-cover scale-110"
           style={{ filter: 'blur(18px)', opacity: 0.22 }}
         />
-        <div className="absolute inset-0" style={{ background: 'linear-gradient(180deg, rgba(255,255,255,0.1), rgba(255,255,255,0.35))' }} />
         <div className="absolute inset-0 flex items-center justify-center" style={{ padding: `${imagePadding}px` }}>
           <img
             src={src}
@@ -603,7 +602,10 @@ const PageModuleRenderer = ({ page, defaultFont, themeColor }) => {
   };
 
   return (
-    <div style={{ animation: 'invitationPageFlip 720ms cubic-bezier(0.22, 1, 0.36, 1) both' }}>
+    <div
+      className="w-full self-stretch"
+      style={{ animation: 'invitationPageFlip 720ms cubic-bezier(0.22, 1, 0.36, 1) both' }}
+    >
       {renderContent()}
     </div>
   );
