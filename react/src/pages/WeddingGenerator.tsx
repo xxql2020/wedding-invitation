@@ -266,6 +266,24 @@ const getUploadErrorMessage = (error: unknown): string => {
   return message || '上传失败，请重试。';
 };
 
+const getShareErrorMessage = (error: unknown): string => {
+  const message = error instanceof Error ? error.message : String(error || '');
+
+  if (/row-level security|violates row-level security/i.test(message)) {
+    return 'Supabase 数据表或 Storage 权限未开放，请重新执行 schema.sql。';
+  }
+
+  if (/relation .* does not exist|table .* does not exist/i.test(message)) {
+    return 'Supabase invitations 表不存在，请重新执行 schema.sql。';
+  }
+
+  if (/bucket.*not found|not found/i.test(message)) {
+    return 'Supabase bucket 不存在，请检查是否已创建 wedding-images 和 wedding-audio。';
+  }
+
+  return message || '云端短链接生成失败，请检查 Supabase 配置。';
+};
+
 const fonts = [
   { id: 'cormorant', name: '优雅衬线', family: "'Cormorant Garamond', serif" },
   { id: 'dancing', name: '花体手写', family: "'Dancing Script', cursive" },
@@ -741,8 +759,14 @@ const ShareModal = ({ isOpen, onClose, shareUrl, shareHint, onDownloadImage }) =
             
             {shareUrl && (
               <div className="p-3 rounded-lg" style={{ background: '#f8f5f0' }}>
-                <p className="text-xs mb-1" style={{ color: '#8b7355' }}>链接预览</p>
-                <p className="text-xs break-all font-mono" style={{ color: '#2c1810' }}>{shareUrl.length > 80 ? shareUrl.substring(0, 80) + '...' : shareUrl}</p>
+                <p className="text-xs mb-1" style={{ color: '#8b7355' }}>完整链接</p>
+                <textarea
+                  readOnly
+                  value={shareUrl}
+                  onFocus={(event) => event.currentTarget.select()}
+                  className="w-full min-h-[96px] resize-y rounded-lg px-3 py-2 text-xs font-mono outline-none"
+                  style={{ color: '#2c1810', background: '#fff', border: '1px solid #e8d5c4' }}
+                />
               </div>
             )}
             
@@ -1583,6 +1607,8 @@ const WeddingInvitationGenerator = () => {
         };
       } catch (cloudError) {
         console.error('Failed to create Supabase share URL:', cloudError);
+        toast.error(getShareErrorMessage(cloudError));
+        return null;
       }
     }
 
