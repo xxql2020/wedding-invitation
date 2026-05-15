@@ -585,110 +585,6 @@ const ImageUploader = ({ label, value, onChange, aspectRatio = 4 / 3, placeholde
   );
 };
 
-const GalleryUploader = ({ label, value, onChange, maxImages = 6, uploadHandler }) => {
-  // 确保 value 始终是数组
-  const images = Array.isArray(value) ? value : [];
-  const inputRef = useRef(null);
-  const [showCropper, setShowCropper] = useState(false);
-  const [tempImage, setTempImage] = useState('');
-  const [currentIndex, setCurrentIndex] = useState(-1);
-  const [pendingImages, setPendingImages] = useState<string[]>([]);
-
-  const handleFileChange = (e) => {
-    const files = Array.from<File>(e.target.files || []);
-    if (files.length + images.length > maxImages) {
-      toast.error(`最多只能上传 ${maxImages} 张图片`);
-      return;
-    }
-
-    if (files.length === 0) return;
-
-    Promise.all(files.map((file) => new Promise<string>((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onload = (event) => resolve(event.target?.result as string);
-      reader.onerror = () => reject(new Error('图片读取失败'));
-      reader.readAsDataURL(file);
-    })))
-      .then((results) => {
-        const [firstImage, ...restImages] = results;
-        setTempImage(firstImage);
-        setCurrentIndex(images.length);
-        setPendingImages(restImages);
-        setShowCropper(true);
-      })
-      .catch(() => toast.error('图片读取失败，请重试'));
-  };
-
-  const handleCropComplete = async (croppedImage) => {
-    try {
-      const nextImageValue = uploadHandler ? await uploadHandler(croppedImage) : croppedImage;
-      const newImages = [...images];
-      if (currentIndex >= 0 && currentIndex <= newImages.length) {
-        newImages.splice(currentIndex, 0, nextImageValue);
-      }
-      onChange(newImages);
-      if (pendingImages.length > 0) {
-        const [nextImage, ...restImages] = pendingImages;
-        setTempImage(nextImage);
-        setCurrentIndex(newImages.length);
-        setPendingImages(restImages);
-        setShowCropper(true);
-      } else {
-        setShowCropper(false);
-        setTempImage('');
-        setCurrentIndex(-1);
-        setPendingImages([]);
-        toast.success('图片上传成功');
-      }
-    } catch (error) {
-      console.error('相册图片上传失败:', error);
-      toast.error(getUploadErrorMessage(error));
-    }
-  };
-
-  const handleRemove = (index) => {
-    const newImages = [...images];
-    newImages.splice(index, 1);
-    onChange(newImages);
-  };
-
-  return (
-    <>
-      <div className="space-y-2">
-        <div className="flex items-center justify-between">
-          <label className="flex items-center gap-1.5 text-xs font-semibold tracking-wider uppercase" style={{ color: '#8b7355' }}>
-            <span style={{ color: '#c9a84c' }}>{label}</span>
-            <span className="text-xs font-normal" style={{ color: '#b8a898' }}>({images.length}/{maxImages})</span>
-          </label>
-        </div>
-        
-        <div className="grid grid-cols-3 gap-2">
-          {images.map((img, index) => (
-            <div key={index} className="relative aspect-square rounded-lg overflow-hidden group">
-              <img src={img} alt={`相册 ${index + 1}`} className="w-full h-full object-contain" style={{ background: '#fff8f4' }} />
-              <button onClick={() => handleRemove(index)} className="absolute top-1 right-1 w-5 h-5 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity" style={{ background: 'rgba(139,0,0,0.8)' }}>
-                <X className="w-3 h-3 text-white" />
-              </button>
-            </div>
-          ))}
-          
-          {images.length < maxImages && (
-            <div onClick={() => inputRef.current?.click()} className="aspect-square rounded-lg cursor-pointer transition-all hover:opacity-80 flex items-center justify-center" style={{ background: 'linear-gradient(135deg, #fdf6f0 0%, #f8f0e8 100%)', border: '2px dashed #e8d5c4' }}>
-              <Upload className="w-6 h-6" style={{ color: '#c9a84c' }} />
-            </div>
-          )}
-        </div>
-        
-        <input ref={inputRef} type="file" accept="image/*" multiple onChange={handleFileChange} className="hidden" />
-      </div>
-
-      {showCropper && (
-        <ImageCropper imageSrc={tempImage} onComplete={handleCropComplete} onCancel={() => { setShowCropper(false); setTempImage(''); setCurrentIndex(-1); setPendingImages([]); }} aspectRatio={1} />
-      )}
-    </>
-  );
-};
-
 const ShareModal = ({ isOpen, onClose, shareUrl, shareHint, onDownloadImage }) => {
   const [copied, setCopied] = useState(false);
   const [activeTab, setActiveTab] = useState<'link' | 'qr'>('link');
@@ -1399,10 +1295,6 @@ const WeddingInvitationGenerator = () => {
     return uploadImageToCloudIfEnabled('covers', dataUrl, 'cover.jpg');
   }, [uploadImageToCloudIfEnabled]);
 
-  const handleGalleryImageUpload = useCallback(async (dataUrl: string) => {
-    return uploadImageToCloudIfEnabled('gallery', dataUrl, 'gallery.jpg');
-  }, [uploadImageToCloudIfEnabled]);
-
   const addSticker = (type: StickerType) => {
     stickerIdRef.current += 1;
     const offset = info.stickers.length % 4;
@@ -1954,8 +1846,6 @@ const WeddingInvitationGenerator = () => {
 
                   <ImageUploader label="封面图片" value={info.coverImage} onChange={(v) => updateField('coverImage', v)} aspectRatio={4/3} uploadHandler={handleCoverImageUpload} />
 
-                  <GalleryUploader label="相册照片" value={info.galleryImages} onChange={(v) => updateField('galleryImages', v)} maxImages={6} uploadHandler={handleGalleryImageUpload} />
-
                   <div>
                     <label className="text-xs font-semibold mb-2 block" style={{ color: '#8b7355' }}>主题风格</label>
                     <div className="grid grid-cols-2 gap-1.5 sm:gap-2">
@@ -2223,6 +2113,12 @@ const WeddingInvitationGenerator = () => {
               <Sparkles className="w-4 h-4" style={{ color: mobileView === 'preview' ? 'white' : '#8b7355' }} />
             </div>
             <span className="text-xs" style={{ color: mobileView === 'preview' ? '#c9a84c' : '#8b7355' }}>预览</span>
+          </button>
+          <button onClick={handleShare} className="flex flex-col items-center gap-1 px-6 py-2 rounded-lg transition-all">
+            <div className="w-8 h-8 rounded-lg flex items-center justify-center" style={{ background: '#f0e8e0' }}>
+              <Share2 className="w-4 h-4" style={{ color: '#8b7355' }} />
+            </div>
+            <span className="text-xs" style={{ color: '#8b7355' }}>分享</span>
           </button>
         </div>
       )}
