@@ -589,14 +589,46 @@ const ShareModal = ({ isOpen, onClose, shareUrl, shareHint, onDownloadImage }) =
   const [copied, setCopied] = useState(false);
   const [activeTab, setActiveTab] = useState<'link' | 'qr'>('link');
 
+  const copyText = async (text: string): Promise<boolean> => {
+    try {
+      if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(text);
+        return true;
+      }
+    } catch {
+      // Fall through to the legacy copy path for mobile browsers.
+    }
+
+    try {
+      const textarea = document.createElement('textarea');
+      textarea.value = text;
+      textarea.setAttribute('readonly', 'true');
+      textarea.style.position = 'fixed';
+      textarea.style.top = '0';
+      textarea.style.left = '0';
+      textarea.style.opacity = '0';
+      textarea.style.pointerEvents = 'none';
+      document.body.appendChild(textarea);
+      textarea.focus();
+      textarea.select();
+      textarea.setSelectionRange(0, textarea.value.length);
+      const copied = document.execCommand('copy');
+      document.body.removeChild(textarea);
+      return copied;
+    } catch {
+      return false;
+    }
+  };
+
   const handleCopy = async (url) => {
     try {
-      await navigator.clipboard.writeText(url);
+      const copied = await copyText(url);
+      if (!copied) throw new Error('copy failed');
       setCopied(true);
       toast.success('链接已复制到剪贴板');
       setTimeout(() => setCopied(false), 2000);
     } catch {
-      toast.error('复制失败，请手动复制');
+      toast.error('复制失败，请长按下方链接手动复制');
     }
   };
 

@@ -86,6 +86,37 @@ const decodeBase64Url = (value: string): string => {
   return normalized + padding;
 };
 
+const copyText = async (text: string): Promise<boolean> => {
+  try {
+    if (navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(text);
+      return true;
+    }
+  } catch {
+    // Fall through to the legacy copy path for mobile browsers.
+  }
+
+  try {
+    const textarea = document.createElement('textarea');
+    textarea.value = text;
+    textarea.setAttribute('readonly', 'true');
+    textarea.style.position = 'fixed';
+    textarea.style.top = '0';
+    textarea.style.left = '0';
+    textarea.style.opacity = '0';
+    textarea.style.pointerEvents = 'none';
+    document.body.appendChild(textarea);
+    textarea.focus();
+    textarea.select();
+    textarea.setSelectionRange(0, textarea.value.length);
+    const copied = document.execCommand('copy');
+    document.body.removeChild(textarea);
+    return copied;
+  } catch {
+    return false;
+  }
+};
+
 const parseCompressedPayload = async (value: string): Promise<SharePayload | WeddingInfo> => {
   if (typeof window === 'undefined' || typeof window.DecompressionStream === 'undefined') {
     throw new Error('Compressed share links are not supported in this browser.');
@@ -1173,10 +1204,11 @@ const WeddingPreview = () => {
 
   const handleCopyLink = async () => {
     try {
-      await navigator.clipboard.writeText(window.location.href);
+      const copied = await copyText(window.location.href);
+      if (!copied) throw new Error('copy failed');
       toast.success('链接已复制');
     } catch {
-      toast.error('复制失败');
+      toast.error('复制失败，请长按地址栏手动复制');
     }
   };
 
