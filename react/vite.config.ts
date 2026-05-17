@@ -54,8 +54,9 @@ const usedLucideIcons = getUsedLucideIcons();
 
 // https://vite.dev/config/
 export default defineConfig({
-  // Use relative asset paths so the app can be deployed under a subdirectory.
-  base: './',
+  // Cloudflare Pages serves this app from the site root, so assets must use
+  // an absolute base path instead of resolving relative to the current URL.
+  base: "/",
   plugins: [
     react(),
     tailwindcss(),
