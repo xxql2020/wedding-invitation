@@ -16,27 +16,6 @@ export const supabase: SupabaseClient | null = isSupabaseConfigured
   ? createClient(supabaseUrl, supabasePublishableKey)
   : null;
 
-const getSupabaseUrlHost = () => {
-  if (!supabaseUrl) return null;
-
-  try {
-    return new URL(supabaseUrl).host;
-  } catch {
-    return 'invalid-url';
-  }
-};
-
-export const getSupabaseConfigDebugInfo = () => ({
-  hasUrl: Boolean(supabaseUrl),
-  urlHost: getSupabaseUrlHost(),
-  hasPublishableKey: Boolean(supabasePublishableKey),
-  publishableKeyPrefix: supabasePublishableKey ? supabasePublishableKey.slice(0, 20) : null,
-  imagesBucket: SUPABASE_BUCKETS.images,
-  audioBucket: SUPABASE_BUCKETS.audio,
-  invitationsTable: SUPABASE_INVITATIONS_TABLE,
-  isConfigured: isSupabaseConfigured,
-});
-
 export const requireSupabase = (): SupabaseClient => {
   if (!supabase) {
     throw new Error('Supabase is not configured.');
