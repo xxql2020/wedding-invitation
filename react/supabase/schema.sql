@@ -63,3 +63,5 @@ on storage.objects
 for select
 to anon, authenticated
 using (bucket_id = 'wedding-audio');
+
+
