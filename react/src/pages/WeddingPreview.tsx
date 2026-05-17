@@ -6,6 +6,7 @@ import { QRCodeCanvas } from 'qrcode.react';
 import { AnimatedSticker, getStickerFrameSize, StickerVisualStyles, type StickerVisualType } from '../components/AnimatedSticker';
 import FallingPetals from '../components/FallingPetals';
 import '../components/FallingPetals.css';
+import { loadLocalSharePayload } from '../lib/localShareStorage';
 import { getInvitationFromCloud, isSupabaseConfigured } from '../lib/weddingCloud';
 
 export interface PageModule {
@@ -1054,11 +1055,10 @@ const WeddingPreview = () => {
           }
         }
       } else if (shortCode) {
-        const stored = localStorage.getItem(`wedding_short_${shortCode}`);
+        const stored = await loadLocalSharePayload(shortCode);
         if (stored) {
           try {
-            const parsed = JSON.parse(stored);
-            applyDecodedData(parsed);
+            applyDecodedData(stored);
           } catch (e) {
             setError('无法加载请帖数据');
           }

@@ -5,6 +5,7 @@ import { toast } from 'sonner';
 import ImageCropper from '../components/ImageCropper';
 import { AnimatedSticker, getStickerFrameSize, StickerVisualStyles, type StickerVisualType } from '../components/AnimatedSticker';
 import { QRCodeCanvas } from 'qrcode.react';
+import { saveLocalSharePayload } from '../lib/localShareStorage';
 import { createInvitationInCloud, isSupabaseConfigured, uploadAudioDataUrlToCloud, uploadAudioFileToCloud, uploadImageDataUrlToCloud } from '../lib/weddingCloud';
 
 export interface PageModule {
@@ -72,7 +73,6 @@ interface AmapSearchResponse {
 }
 
 const DEFAULT_TEMPLATE = 'romantic';
-const LOCAL_SHARE_PREFIX = 'wedding_short_';
 
 const DEFAULT_WEDDING_INFO: WeddingInfo = {
   groomName: '',
@@ -161,9 +161,9 @@ const createShortCode = (): string => {
   return `local${Date.now().toString(36)}`;
 };
 
-const buildShortShareUrl = (payload: SharePayload): string => {
+const buildShortShareUrl = async (payload: SharePayload): Promise<string> => {
   const shortCode = createShortCode();
-  window.localStorage.setItem(`${LOCAL_SHARE_PREFIX}${shortCode}`, JSON.stringify(payload));
+  await saveLocalSharePayload(shortCode, payload);
   return `${getAppBaseUrl()}#/preview?short=${shortCode}`;
 };
 
@@ -1576,7 +1576,7 @@ const WeddingInvitationGenerator = () => {
     const payload = buildSharePayload(shareInfo, activeTemplate);
 
     try {
-      const shortUrl = buildShortShareUrl(payload);
+      const shortUrl = await buildShortShareUrl(payload);
       return {
         url: shortUrl,
         hint: '当前环境未配置 Supabase，已生成本机短码链接。该链接仅在当前浏览器环境下可用。'
