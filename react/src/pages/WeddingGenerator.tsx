@@ -73,6 +73,14 @@ interface AmapSearchResponse {
 }
 
 const DEFAULT_TEMPLATE = 'romantic';
+const LOCAL_SHARE_MAX_PAYLOAD_BYTES = 2 * 1024 * 1024;
+
+const formatPayloadSize = (bytes: number): string => {
+  if (!Number.isFinite(bytes) || bytes <= 0) return '0 B';
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(2)} MB`;
+};
 
 const DEFAULT_WEDDING_INFO: WeddingInfo = {
   groomName: '',
@@ -144,6 +152,15 @@ const buildSharePayload = (info: WeddingInfo, template: string): SharePayload =>
   template,
   createdAt: Date.now()
 });
+
+const getPayloadSizeBytes = (payload: SharePayload): number => {
+  try {
+    return new TextEncoder().encode(JSON.stringify(payload)).length;
+  } catch (error) {
+    console.error('Failed to serialize share payload:', error);
+    return Number.POSITIVE_INFINITY;
+  }
+};
 
 const getAppBaseUrl = (): string => {
   const { origin, pathname } = window.location;
@@ -1574,6 +1591,14 @@ const WeddingInvitationGenerator = () => {
     }
 
     const payload = buildSharePayload(shareInfo, activeTemplate);
+    const payloadSize = getPayloadSizeBytes(payload);
+
+    if (payloadSize > LOCAL_SHARE_MAX_PAYLOAD_BYTES) {
+      toast.error(
+        `当前请帖内容约 ${formatPayloadSize(payloadSize)}，已超过本地短码上限，请先配置 Supabase 云端分享。`
+      );
+      return null;
+    }
 
     try {
       const shortUrl = await buildShortShareUrl(payload);
