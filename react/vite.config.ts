@@ -54,7 +54,8 @@ const usedLucideIcons = getUsedLucideIcons();
 
 // https://vite.dev/config/
 export default defineConfig({
-  base: '/',
+  // Use relative asset paths so the app can be deployed under a subdirectory.
+  base: './',
   plugins: [
     react(),
     tailwindcss(),

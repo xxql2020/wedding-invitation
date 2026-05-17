@@ -145,6 +145,14 @@ const buildSharePayload = (info: WeddingInfo, template: string): SharePayload =>
   createdAt: Date.now()
 });
 
+const getAppBaseUrl = (): string => {
+  const { origin, pathname } = window.location;
+  const normalizedPath = pathname.endsWith('/') || pathname.endsWith('.html')
+    ? pathname
+    : `${pathname}/`;
+  return `${origin}${normalizedPath}`;
+};
+
 const createShortCode = (): string => {
   if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
     return crypto.randomUUID().replace(/-/g, '').slice(0, 10);
@@ -156,7 +164,7 @@ const createShortCode = (): string => {
 const buildShortShareUrl = (payload: SharePayload): string => {
   const shortCode = createShortCode();
   window.localStorage.setItem(`${LOCAL_SHARE_PREFIX}${shortCode}`, JSON.stringify(payload));
-  return `${window.location.origin}/#/preview?short=${shortCode}`;
+  return `${getAppBaseUrl()}#/preview?short=${shortCode}`;
 };
 
 const getFileFromInputEvent = (event: Event): File | null => {
@@ -1555,7 +1563,7 @@ const WeddingInvitationGenerator = () => {
         });
 
         return {
-          url: `${window.location.origin}/#/preview?id=${invitationId}`,
+          url: `${getAppBaseUrl()}#/preview?id=${invitationId}`,
           hint: `${shareHintPrefix}已生成 Supabase 云端分享链接，可跨设备访问。`
         };
       } catch (cloudError) {
